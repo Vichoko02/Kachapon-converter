@@ -1,0 +1,18 @@
+# docker-compose.yml para el contenedor de ibisPaint (Redroid + Docker)
+# Requiere: bin/apks/ibispaint_frozen.apk (APK congelado de ibisPaint v12)
+services:
+  ibis-container:
+    build:
+      context: ..
+      dockerfile: bin/ghidra/Dockerfile.ibis
+    container_name: kachapon-ibis
+    privileged: true
+    devices:
+      - /dev/kvm
+    ports:
+      - "5555:5555"
+    environment:
+      - REDROID_ADB_PORT=5555
+      - IBIS_APK_PATH=/tmp/ibispaint.apk
+    volumes:
+      - ./temp_seq:/app/temp_seq

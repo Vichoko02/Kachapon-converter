@@ -1,0 +1,29 @@
+.root {
+    -fx-font-family: "Segoe UI", sans-serif;
+}
+
+.button {
+    -fx-cursor: hand;
+}
+
+.label {
+    -fx-text-fill: #1f2937;
+}
+
+.drop-zone {
+    -fx-background-color: #f9fafb;
+    -fx-background-radius: 10;
+    -fx-border-color: #cbd5e1;
+    -fx-border-style: segments(8, 6);
+    -fx-border-width: 2;
+    -fx-border-radius: 10;
+    -fx-cursor: hand;
+}
+.drop-zone:hover, .drop-zone.drag-over {
+    -fx-background-color: #eff6ff;
+    -fx-border-color: #2563eb;
+}
+.drop-icon { -fx-fill: #94a3b8; }
+.drop-zone:hover .drop-icon, .drop-zone.drag-over .drop-icon { -fx-fill: #2563eb; }
+.drop-title { -fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #374151; }
+.drop-sub { -fx-font-size: 12px; -fx-text-fill: #6b7280; }

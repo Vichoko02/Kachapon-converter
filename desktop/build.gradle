@@ -1,0 +1,27 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+dependencies {
+    implementation project(':core')
+    implementation 'org.openjfx:javafx-controls:21'
+    implementation 'org.openjfx:javafx-fxml:21'
+    implementation 'org.openjfx:javafx-graphics:21'
+}
+
+application {
+    mainClass = 'com.kachapon.desktop.MainApp'
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+tasks.named('run') {
+    doFirst {
+        classpath = files(sourceSets.main.runtimeClasspath)
+    }
+}

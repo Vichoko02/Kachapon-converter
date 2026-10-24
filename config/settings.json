@@ -1,0 +1,29 @@
+{
+  "pipeline": {
+    "name": "KachaponConverter",
+    "version": "1.0.0",
+    "bridge_dir": "temp_seq",
+    "frames_dir": "temp_seq/frames",
+    "logs_dir": "logs",
+    "config_dir": "config"
+  },
+  "image": {
+    "format": "PNG",
+    "bit_depth": 32,
+    "mode": "RGBA"
+  },
+  "formats": {
+    "input": [".ipv", ".clip", ".kra"],
+    "output": [".ipv", ".clip", ".kra"]
+  },
+  "bin": {
+    "ghidra": "bin/ghidra",
+    "platform_tools": "bin/platform-tools",
+    "apks": "bin/apks",
+    "ibis_apk": "bin/apks/ibispaint_frozen.apk"
+  },
+  "hooks": {
+    "ibis": "hooks/ibis_extractor.js",
+    "clip": "hooks/clip_extractor.js"
+  }
+}

@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">KachaponConverter</string>
+    <string name="subtitle">Convierte entre Krita, Clip Studio e ibisPaint</string>
+    <string name="pick_file">Elegir archivo (.kra / .clip / .ipv)</string>
+    <string name="no_file">Ningún archivo seleccionado</string>
+    <string name="convert_to">Convertir a:</string>
+    <string name="convert">Convertir y guardar…</string>
+    <string name="ready">Listo</string>
+</resources>

@@ -1,0 +1,58 @@
+/kachapon-converter/                          (KachaponConverter - Versiones Desktop + Android)
+├── README.md              # Instrucciones de instalación y uso (Desktop + Android)
+├── run.bat                # Lanzador Windows (compila y ejecuta Desktop)
+├── settings.gradle        # Módulos Gradle: core, desktop, android
+├── build.gradle           # Config raíz (JUnit, Android AGP)
+├── gradle.properties      # android.useAndroidX=true
+├── local.properties       # sdk.dir (ruta SDK Android local)
+├── gradlew / gradlew.bat  # Gradle wrapper 9.4.1
+├── gradle/                # Wrapper de Gradle
+├── ARQUITECTURA_PIPELINE.md # Arquitectura del pipeline (Java, no Python)
+├── estructura_proyecto.txt # Este documento
+├── config/
+│   └── settings.json      # Configuración del puente y rutas
+├── core/                  # Lógica compartida Java (Desktop + Android)
+│   ├── build.gradle       # Gson + JUnit, release 11
+│   └── src/main/java/com/kachapon/core/
+│       ├── Bridge.java            # Puente universal (manifest + frames/ + timesheet.xdts)
+│       ├── Manifest.java          # resolución, fps, duración, tracks, frames
+│       ├── FrameRef.java          # track, frame, hold, path
+│       ├── ConversionResult.java
+│       ├── Png.java               # Lectura cabecera IHDR sin java.awt
+│       ├── converters/
+│       │   ├── Converter.java           # Abstracto con helpers ZIP
+│       │   ├── KritaConverter.java      # Motor .kra nativo (ZIP + maindoc.xml)
+│       │   └── SequenceZipConverter.java# Motor .clip y .ipv (ZIP puente)
+│       └── orchestrator/
+│           └── Orchestrator.java        # Entrada → puente → salida (escritura atómica .tmp)
+│   └── src/test/java/com/kachapon/core/
+│       └── CoreTest.java        # Pruebas JUnit 5 (requiere Gradle)
+├── desktop/               # Frontend escritorio JavaFX 21
+│   ├── build.gradle       # JavaFX Controls/FXML/Graphics, Java 21
+│   └── src/main/java/com/kachapon/desktop/
+│       ├── MainApp.java   # GUI: drag-and-drop, autodetección, carpeta salida, autonombrado
+│       └── app.css        # Estilos CSS (drop-zone, botones, etc.)
+├── android/               # Módulo Android (Android Studio)
+│   ├── build.gradle       # AGP, compileSdk 37, minSdk 24, Java 11
+│   └── src/main/
+│       ├── AndroidManifest.xml
+│       ├── java/com/kachapon/android/MainActivity.java
+│       └── res/
+│           ├── layout/activity_main.xml
+│           └── values/strings.xml
+├── libs/                  # Dependencias pre-bajadas (offline)
+│   ├── gson-2.10.1.jar
+│   ├── javafx_javafx-base-21-win.jar
+│   ├── javafx_javafx-controls-21-win.jar
+│   ├── javafx_javafx-fxml-21-win.jar
+│   └── javafx_javafx-graphics-21-win.jar
+├── bin/
+│   ├── ghidra/              # Motor REA (.gitkeep)
+│   ├── platform-tools/      # ADB (.gitkeep)
+│   └── apks/                # ibispaint_frozen.apk (.gitkeep)
+├── hooks/
+│   ├── ibis_extractor.js    # Frida para Android (placeholder)
+│   └── clip_extractor.js    # Frida para Windows (placeholder)
+├── temp_seq/                # Puente temporal (se limpia solo al convertir)
+│   └── frames/
+└── logs/                    # Logs del pipeline (.gitkeep)

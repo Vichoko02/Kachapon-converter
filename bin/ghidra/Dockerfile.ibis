@@ -1,0 +1,20 @@
+FROM redroid/redroid:12.0.0-latest
+
+# Instalar herramientas básicas
+USER root
+RUN apt-get update && apt-get install -y \
+    wget \
+    curl \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copiar el APK de ibisPaint congelado (debe colocarse en bin/apks/ ibispaint_frozen.apk)
+COPY ibispaint_frozen.apk /tmp/ibispaint.apk
+
+# Instalar ibisPaint al iniciar
+RUN pm install /tmp/ibispaint.apk || true
+
+# Exponer puerto ADB
+EXPOSE 5555
+
+CMD ["/bin/sh"]

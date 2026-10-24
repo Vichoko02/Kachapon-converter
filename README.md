@@ -2,7 +2,7 @@
 
 Motor de conversión de animación indie para pasar proyectos entre **Krita (.kra)**, **Clip Studio Paint (.clip)** e **ibisPaint (.ipv)** preservando capas, tiempos de exposición y estructura de cels.
 
-Toda conversión pasa por un **puente universal** (`temp_seq/`): una secuencia de frames PNG + `manifest.json` + `timesheet.xdts`.
+Toda conversión pasa por un **puente universal** (carpeta `kachapon_seq` dentro de la carpeta temporal del sistema): una secuencia de frames PNG + `manifest.json` + `timesheet.xdts`.
 
 ---
 
@@ -70,7 +70,7 @@ Toda conversión pasa por un **puente universal** (`temp_seq/`): una secuencia d
 Archivo origen (.kra / .clip / .ipv)
         │
         ▼
-  [ Puente universal: temp_seq/ ]
+  [ Puente universal: kachapon_seq/ ]
   ├─ manifest.json   (resolución, FPS, pistas, frames, holds)
   ├─ frames/         (secuencia PNG RGBA: pista_frame.png)
   └─ timesheet.xdts  (hoja de tiempos estándar)
@@ -105,8 +105,8 @@ Los JARs de JavaFX y Gson ya están precargados en `libs/` para que `run.bat` fu
 
 ## ⚠️ Notas importantes
 
-- **`.clip` reales** de Clip Studio Paint se leen directamente (cada carpeta de animación es una pista, con sus tiempos). Al escribir `.clip` se genera un documento de animación nativo (parte de la plantilla `core/src/main/resources/com/kachapon/core/clip_template.clip`): una carpeta de animación con un cel por dibujo y su línea de tiempo con los holds. Probado abriéndolo en Clip Studio Paint EX. Los dibujos salen ya combinados en una sola carpeta (las capas originales no se conservan) y sin el papel del origen.
-- **`.kra`** se escribe como documento Krita real (una capa animada por pista). Para **leer** `.kra` se usa Krita por detrás (`--export-sequence`), así que en desktop hace falta Krita instalado (o `KRITA_PATH`); las pistas llegan combinadas en una.
+- **`.clip` reales** de Clip Studio Paint se leen directamente: el árbol de carpetas y capas con su modo de fusión, opacidad y visibilidad; cada carpeta de animación es una pista con sus tiempos y cada capa suelta, una pista de un solo dibujo. Al escribir `.clip` se genera un documento nativo (parte de la plantilla `core/src/main/resources/com/kachapon/core/clip_template.clip`): las capas con varios dibujos pasan a ser carpetas de animación (un cel por dibujo, con su propia curva de tiempos) y las quietas, capas normales, dentro de las mismas carpetas y con los mismos modos de fusión que el origen. Los modos de fusión usan la tabla medida de clipparse (`Blend.java`). Sin el papel del origen. Límite de Clip Studio: la línea de tiempo solo lista las carpetas de animación que están en la raíz; las que quedan dentro de una carpeta normal se animan igual con el cursor de tiempo (y se ven en el panel de capas), pero no tienen fila en la línea de tiempo.
+- **`.kra`** se escribe como documento Krita real (una capa animada por pista). Para **leer** `.kra` se usa Krita por detrás (`--export-sequence`), así que en desktop hace falta Krita instalado (o `KRITA_PATH`). El documento se lee por capas: cada capa de pintura es una pista, salvo los grupos que no se pueden separar sin cambiar la imagen (modo de fusión distinto de normal, opacidad, máscaras de filtro), que van enteros; máscaras de transformación, opacidad y filtros quedan aplicados en los píxeles. Cada pista es una exportación de Krita (unos 15 s por capa).
 - **`.ipv` reales** de ibisPaint se leen y se escriben directamente, sin la app: cada carpeta de frame es un dibujo, con su duración y los fps de la animación, conservando la transparencia. Al leer, los modos de fusión y el recorte se combinan como "normal". Para abrir un `.ipv` generado, cópialo a `Android/data/jp.ne.ibis.ibispaintx.app/files` en el teléfono y abre "Mi galería" en ibisPaint.
 - **Secuencia PNG**: como destino crea la carpeta `nombre_Nfps/` con un PNG por frame (holds repetidos, huecos transparentes); como origen se elige uno de sus PNG y se usa toda la carpeta.
 - Los scripts de Frida en `hooks/` son placeholders para intercepción de memoria avanzada (requiere dispositivo con Frida Server).

@@ -1,0 +1,23 @@
+# Compilación y Gradle
+.gradle/
+build/
+dist/
+*.class
+
+# Rutas propias de cada equipo
+local.properties
+.idea/
+*.iml
+
+# Puentes de conversión (cientos de MB) y logs
+temp_seq/
+temp_seq2/
+logs/*
+!logs/.gitkeep
+*.tmp
+
+# Herramientas descargadas (Ghidra, ADB, APK de ibisPaint)
+bin/**
+!bin/**/
+!bin/**/.gitkeep
+!bin/**/Dockerfile*

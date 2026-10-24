@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context=".MainActivity">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="24dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="24dp"
+            android:text="@string/subtitle" />
+
+        <Button
+            android:id="@+id/pick_btn"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/pick_file" />
+
+        <TextView
+            android:id="@+id/file_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="24dp"
+            android:text="@string/no_file" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/convert_to"
+            android:textStyle="bold" />
+
+        <RadioGroup
+            android:id="@+id/format_group"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="24dp"
+            android:checkedButton="@id/fmt_clip">
+
+            <RadioButton
+                android:id="@+id/fmt_kra"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:tag=".kra"
+                android:text="Krita (.kra)" />
+
+            <RadioButton
+                android:id="@+id/fmt_clip"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:tag=".clip"
+                android:text="Clip Studio (.clip)" />
+
+            <RadioButton
+                android:id="@+id/fmt_ipv"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:tag=".ipv"
+                android:text="ibisPaint (.ipv)" />
+        </RadioGroup>
+
+        <Button
+            android:id="@+id/convert_btn"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:enabled="false"
+            android:text="@string/convert" />
+
+        <TextView
+            android:id="@+id/status_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/ready" />
+    </LinearLayout>
+</ScrollView>

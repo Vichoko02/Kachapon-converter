@@ -80,4 +80,44 @@ public final class Blend {
         }
         return v;
     }
+
+    // ibisPaint: número del modo de fusión tal como lo muestra su panel de capas. Los que no tiene (por ejemplo "luminize") dan -1.
+    private static final Map<String, Integer> TO_IBIS = new HashMap<>();
+
+    static {
+        TO_IBIS.put("normal", 0);
+        TO_IBIS.put("add", 1);
+        TO_IBIS.put("multiply", 2);
+        TO_IBIS.put("overlay", 5);
+        TO_IBIS.put("subtract", 7);
+        TO_IBIS.put("screen", 9);
+        TO_IBIS.put("darken", 13);
+        TO_IBIS.put("burn", 14);
+        TO_IBIS.put("linear_burn", 15);
+        TO_IBIS.put("darker color", 16);
+        TO_IBIS.put("lighten", 17);
+        TO_IBIS.put("dodge", 18);
+        TO_IBIS.put("lighter color", 20);
+        TO_IBIS.put("soft_light_svg", 21);
+        TO_IBIS.put("soft_light", 21);
+        TO_IBIS.put("soft_light_ps", 21);
+        TO_IBIS.put("hard_light", 22);
+        TO_IBIS.put("vivid_light", 23);
+        TO_IBIS.put("linear_light", 24);
+        TO_IBIS.put("pin_light", 25);
+        TO_IBIS.put("hard_mix_photoshop", 26);
+        TO_IBIS.put("hard_mix", 26);
+        TO_IBIS.put("diff", 27);
+        TO_IBIS.put("exclusion", 28);
+        TO_IBIS.put("divide", 29);
+        TO_IBIS.put("hue", 30);
+        TO_IBIS.put("saturation", 31);
+        TO_IBIS.put("color", 32);
+    }
+
+    /** Número de ibisPaint para un modo de Krita, o -1 si ibisPaint no lo tiene. */
+    public static int toIbis(String krita) {
+        Integer v = krita == null ? Integer.valueOf(0) : TO_IBIS.get(krita);
+        return v == null ? -1 : v;
+    }
 }

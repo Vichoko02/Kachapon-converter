@@ -120,4 +120,23 @@ public final class Blend {
         Integer v = krita == null ? Integer.valueOf(0) : TO_IBIS.get(krita);
         return v == null ? -1 : v;
     }
+
+    private static final Map<Integer, String> FROM_IBIS = new HashMap<>();
+
+    static {
+        for (Map.Entry<String, Integer> e : TO_IBIS.entrySet()) FROM_IBIS.putIfAbsent(e.getValue(), e.getKey());
+        // Dos nombres de Krita comparten número: se fija el que se usa en el resto del proyecto
+        FROM_IBIS.put(21, "soft_light_svg");
+        FROM_IBIS.put(26, "hard_mix_photoshop");
+    }
+
+    /** Modo de Krita para un número de ibisPaint; los desconocidos quedan como "normal" y se avisa. */
+    public static String fromIbis(int ibis) {
+        String v = FROM_IBIS.get(ibis);
+        if (v == null) {
+            System.err.println("Advertencia: el modo de fusión " + ibis + " de ibisPaint no tiene equivalente; se usa normal.");
+            return "normal";
+        }
+        return v;
+    }
 }

@@ -37,13 +37,20 @@ public class IbisConverter extends SequenceZipConverter {
 
     /**
      * Escribe un .ipv nativo que ibisPaint importa: lienzo, una sesión de edición vacía (no hace falta historial),
-     * una capa por dibujo dentro de su carpeta de frame con su duración, la imagen combinada para la miniatura y el
-     * MetaInfo. Probado importándolo en ibisPaint 14.1.2.
+     * una carpeta de frame por tramo de la animación con sus capas (ver Planner: las carpetas se resuelven, las capas
+     * normales seguidas se funden y solo quedan aparte las que tienen modo de fusión), la imagen combinada para la
+     * miniatura y el MetaInfo. Cada capa conserva su modo y su opacidad; las ocultas no se escriben.
      */
     @Override
     public void build(Manifest m, Bridge bridge, File output) throws Exception {
-        List<Drawing> drawings = flatten(m, bridge);
-        if (drawings.isEmpty()) throw new Exception("La animación no tiene frames.");
+        Planner planner = new Planner(m, bridge, mode -> Blend.toIbis(mode) >= 0);
+        List<Planner.State> states;
+        try {
+            states = planner.states();
+        } catch (UncheckedIOException e) {
+            throw e.getCause();
+        }
+        if (states.isEmpty()) throw new Exception("La animación no tiene frames.");
         int w = m.width(), h = m.height();
         double now = System.currentTimeMillis() / 1000.0;
         String art = artId();
@@ -63,24 +70,44 @@ public class IbisConverter extends SequenceZipConverter {
 
             ByteArrayOutputStream layers = new ByteArrayOutputStream();
             DataOutputStream l = new DataOutputStream(layers);
-            int id = 2, lastFolder = 0;
-            for (Drawing d : drawings) {
-                int layerId = id++, folderId = id++;
-                imageChunk(out, now, layerId, 1, 4, rpng(rotated(Png.decode(d.png)), w, h));
-                // Primero la capa y después su carpeta de frame, como guarda ibisPaint
-                layerSub(l, false, layerId, 1f, folderId, 0, Integer.MIN_VALUE, -1);
-                layerSub(l, true, folderId, 1f, ROOT, 0x200, layerId, d.hold);
+            int id = 2, lastFolder = 0, count = 1;
+            int[] blank = null;
+            for (Planner.State s : states) {
+                int n = Math.max(1, s.planes.size()), first = id, folderId = id + n;
+                for (int k = 0; k < n; k++) {
+                    int layerId = first + k;
+                    int[] px;
+                    int blend = 0;
+                    float alpha = 1f;
+                    String name = "";
+                    if (s.planes.isEmpty()) { // hueco: una capa transparente para que el frame exista
+                        if (blank == null) blank = new int[w * h];
+                        px = blank;
+                    } else {
+                        Planner.Plane p = s.planes.get(k);
+                        px = planner.pixels(p);
+                        blend = Blend.toIbis(p.blend);
+                        alpha = p.opacity / 255f;
+                        name = p.name;
+                    }
+                    imageChunk(out, now, layerId, 1, 4, rpng(rotated(px), w, h));
+                    layerSub(l, false, layerId, alpha, blend, name, folderId, 0, Integer.MIN_VALUE, -1);
+                }
+                // Primero las capas y después su carpeta de frame, como guarda ibisPaint; la capa actual es la de más arriba
+                layerSub(l, true, folderId, 1f, 0, "", ROOT, 0x200, first + n - 1, s.hold);
+                id = folderId + 1;
                 lastFolder = folderId;
+                count += n + 1;
             }
             // Capa especial -1 (sin padre, 50 %) con imagen vacía, y el lienzo combinado en PNG normal para la miniatura
             imageChunk(out, now, -1, 1, 4, new byte[0]);
-            imageChunk(out, now, -1, 0, 0, drawings.get(0).png);
-            layerSub(l, false, -1, 0.5f, Integer.MIN_VALUE, 0, Integer.MIN_VALUE, -1);
+            imageChunk(out, now, -1, 0, 0, Png.encode(planner.compose(states.get(0)), w, h));
+            layerSub(l, false, -1, 0.5f, 0, "", Integer.MIN_VALUE, 0, Integer.MIN_VALUE, -1);
 
             c.writeInt(1410); str(c, art); str(c, title); str(c, ""); str(c, ""); c.writeInt(0); c.writeInt(0); str(c, ""); str(c, "");
             c.writeDouble(now); c.writeDouble(now); c.writeDouble(now); c.writeLong(0); str(c, ""); c.writeInt(w); c.writeInt(h);
             str(c, ""); c.writeInt(1); str(c, ""); c.writeInt(lastFolder);
-            c.writeInt(drawings.size() * 2 + 1);
+            c.writeInt(count);
             layers.writeTo(c);
             byte[] tail = metaTail();
             ByteBuffer t = ByteBuffer.wrap(tail);
@@ -140,11 +167,13 @@ public class IbisConverter extends SequenceZipConverter {
         chunk(out, IMAGE, b);
     }
 
-    private static void layerSub(DataOutputStream out, boolean folder, int id, float alpha, int parent, int flag2, int frameCurrent, int duration) throws IOException {
+    /** Capa o carpeta del MetaInfo; blend es el número de modo de fusión de ibisPaint (0 = normal) y alpha la opacidad (0..1). */
+    private static void layerSub(DataOutputStream out, boolean folder, int id, float alpha, int blend, String name, int parent,
+                                 int flag2, int frameCurrent, int duration) throws IOException {
         ByteArrayOutputStream b = new ByteArrayOutputStream();
         DataOutputStream c = new DataOutputStream(b);
-        c.writeInt(id); c.writeByte(1); c.writeFloat(alpha); c.writeInt(0); c.writeInt(-1);
-        c.writeInt(Integer.MIN_VALUE); str(c, ""); c.writeInt(-1); c.writeInt(flag2); c.writeInt(parent);
+        c.writeInt(id); c.writeByte(1); c.writeFloat(alpha); c.writeInt(blend); c.writeInt(-1);
+        c.writeInt(Integer.MIN_VALUE); str(c, name); c.writeInt(-1); c.writeInt(flag2); c.writeInt(parent);
         c.writeInt(0); c.writeInt(frameCurrent); c.writeInt(duration);
         chunk(out, folder ? FOLDER : LAYER, b);
     }
@@ -238,7 +267,8 @@ public class IbisConverter extends SequenceZipConverter {
     }
 
     private static final class Layer {
-        int id, parent = Integer.MIN_VALUE, duration = 1;
+        int id, blend, parent = Integer.MIN_VALUE, duration = 1;
+        String mode = "normal"; // el modo de fusión como nombre de Krita
         boolean folder, visible, frameFolder, trackFolder;
         float alpha;
         final List<Layer> children = new ArrayList<>();
@@ -341,12 +371,13 @@ public class IbisConverter extends SequenceZipConverter {
             for (Layer l : items) {
                 if (!l.visible) continue;
                 if (l.frameFolder && l != frame) continue;
+                int opacity = Math.round(l.alpha * 255);
                 if (l.folder) {
-                    over(canvas, render(l.children, frame, cache), l.alpha);
+                    Composite.blend(canvas, render(l.children, frame, cache), l.mode, opacity);
                 } else if (images.containsKey(l.id)) {
                     if (!cache.containsKey(l.id)) cache.put(l.id, layerImage(l.id));
-                    // shortcut: todos los modos de fusión y el recorte se combinan como "normal"; basta para línea + color
-                    over(canvas, cache.get(l.id), l.alpha);
+                    // shortcut: el recorte (clipping) se combina como si no existiera; basta para línea + color
+                    Composite.blend(canvas, cache.get(l.id), l.mode, opacity);
                 }
             }
             return canvas;
@@ -424,6 +455,17 @@ public class IbisConverter extends SequenceZipConverter {
         }
     }
 
+    /** Para las pruebas: las capas del .ipv como {id, carpeta (0/1), modo de fusión, opacidad en %, padre}. */
+    static List<int[]> describe(String path) throws Exception {
+        try (RandomAccessFile f = new RandomAccessFile(path, "r")) {
+            byte[] meta = new Native(f).readChunks();
+            if (meta == null) throw new Exception("El .ipv no contiene la información de capas (MetaInfo).");
+            List<int[]> out = new ArrayList<>();
+            for (Layer l : layers(meta)) out.add(new int[]{l.id, l.folder ? 1 : 0, l.blend, Math.round(l.alpha * 100), l.parent});
+            return out;
+        }
+    }
+
     /** Capas y carpetas: contador seguido de subchunks LAYER/FOLDER dentro del MetaInfo. */
     private static List<Layer> layers(byte[] meta) throws Exception {
         ByteBuffer b = ByteBuffer.wrap(meta);
@@ -441,7 +483,7 @@ public class IbisConverter extends SequenceZipConverter {
             x.id = r.getInt();
             int flag = r.get() & 0xFF;
             x.alpha = r.getFloat();
-            r.getInt(); // modo de fusión
+            x.blend = r.getInt(); // modo de fusión
             r.getInt();
             if (r.remaining() >= 4) r.getInt(); // capa de origen
             if (r.remaining() >= 2) r.position(r.position() + 2 + (r.getShort(r.position()) & 0xFFFF)); // nombre
@@ -451,6 +493,7 @@ public class IbisConverter extends SequenceZipConverter {
             if (r.remaining() >= 4) r.getInt(); // capa de ajuste (0 = ninguna)
             if (r.remaining() >= 4) r.getInt(); // capa actual del frame
             if (r.remaining() >= 4) x.duration = r.getInt();
+            x.mode = Blend.fromIbis(x.blend);
             x.visible = (flag & 1) != 0;
             x.frameFolder = x.folder && (flag2 & 0x200) != 0;
             x.trackFolder = x.folder && (flag2 & 0x10000) != 0;

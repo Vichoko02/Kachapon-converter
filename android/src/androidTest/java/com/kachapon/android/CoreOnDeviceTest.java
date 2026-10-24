@@ -33,7 +33,7 @@ public class CoreOnDeviceTest {
 
         for (String src : FORMATS) {
             File in = new File(cache, "sample" + src);
-            Orchestrator.converterFor(src).build(expected, ref, in);
+            Orchestrator.converterFor(src, ref).build(expected, ref, in);
             for (String dst : FORMATS) {
                 if (src.equals(dst)) continue;
                 File out = new File(cache, "out/r" + dst);
@@ -42,7 +42,7 @@ public class CoreOnDeviceTest {
 
                 Bridge check = new Bridge(new File(cache, "check").getPath());
                 check.reset();
-                Manifest got = Orchestrator.converterFor(dst).extract(out.getPath(), check);
+                Manifest got = Orchestrator.converterFor(dst, check).extract(out.getPath(), check);
                 assertEquals(expected.frames.size(), got.frames.size());
                 for (int i = 0; i < got.frames.size(); i++) {
                     assertEquals(expected.frames.get(i).hold, got.frames.get(i).hold);

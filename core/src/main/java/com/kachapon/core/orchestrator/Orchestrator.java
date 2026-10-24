@@ -63,7 +63,7 @@ public class Orchestrator {
         switch (ext) {
             case ".kra": return new KritaConverter(bridge);
             case ".clip": return new ClipConverter(bridge);
-            case ".ipv": return new IbisConverter(bridge);
+            case ".ipv": return new IbisConverter(bridge, true, Boolean.getBoolean("kachapon.ibis.legacy")); // -Dkachapon.ibis.legacy=true: formato de ibisPaint 11
             case ".png": return new PngSequenceConverter(bridge);
             default: throw new IllegalArgumentException("Formato no soportado: " + ext);
         }

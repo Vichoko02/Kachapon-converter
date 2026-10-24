@@ -31,11 +31,32 @@ public abstract class Converter {
         }
     }
 
-    /** La animación visible como una sola pista (ver flatten con pistas); las pistas ocultas no se combinan. */
+    /**
+     * La animación visible como una sola pista: en cada tramo se combinan las capas visibles como en el documento
+     * (carpetas, modos de fusión y opacidad), los huecos quedan transparentes y los frames iguales seguidos se juntan en un hold.
+     */
     protected static java.util.List<Drawing> flatten(Manifest m, Bridge bridge) throws IOException {
-        java.util.List<String> visible = new java.util.ArrayList<>();
-        for (String track : m.tracks) if (m.visible(track)) visible.add(track);
-        return flatten(m, bridge, visible);
+        java.util.List<Drawing> out = new java.util.ArrayList<>();
+        int w = m.width(), h = m.height();
+        byte[] empty = null;
+        Planner planner = new Planner(m, bridge, null);
+        try {
+            for (Planner.State s : planner.states()) {
+                byte[] png;
+                if (s.planes.isEmpty()) {
+                    if (empty == null) empty = Png.encode(new int[w * h], w, h);
+                    png = empty;
+                } else {
+                    png = Png.encode(planner.compose(s), w, h);
+                }
+                Drawing last = out.isEmpty() ? null : out.get(out.size() - 1);
+                if (last != null && Arrays.equals(last.png, png)) last.hold += s.hold;
+                else out.add(new Drawing(png, s.hold));
+            }
+        } catch (java.io.UncheckedIOException e) {
+            throw e.getCause();
+        }
+        return out;
     }
 
     /**
@@ -107,20 +128,6 @@ public abstract class Converter {
 
     /** "Normal" sin premultiplicar: dst = src * opacidad sobre dst. */
     protected static void over(int[] dst, int[] src, float opacity) {
-        for (int i = 0; i < dst.length; i++) {
-            int s = src[i];
-            int sa = Math.round((s >>> 24) * opacity);
-            if (sa <= 0) continue;
-            int d = dst[i], da = d >>> 24;
-            if (sa >= 255 || da == 0) {
-                dst[i] = Math.min(sa, 255) << 24 | (s & 0xFFFFFF);
-                continue;
-            }
-            int keep = da * (255 - sa) / 255, oa = sa + keep;
-            int r = (((s >> 16) & 0xFF) * sa + ((d >> 16) & 0xFF) * keep) / oa;
-            int g = (((s >> 8) & 0xFF) * sa + ((d >> 8) & 0xFF) * keep) / oa;
-            int bl = ((s & 0xFF) * sa + (d & 0xFF) * keep) / oa;
-            dst[i] = oa << 24 | r << 16 | g << 8 | bl;
-        }
+        Composite.over(dst, src, opacity);
     }
 }

@@ -23,8 +23,17 @@ public class IbisConverter extends SequenceZipConverter {
     private static final int ROOT = -5;
     private static final String TRACK = "ibisPaint";
 
+    private final boolean keepAnimated;
+
+    /** Cada capa animada queda como capa propia en cada frame (más pesado que fundirlas, pero se pueden editar por separado). */
     public IbisConverter(Bridge bridge) {
+        this(bridge, true);
+    }
+
+    /** keepAnimated = false funde también las capas animadas: un .ipv mucho más ligero, con una sola capa por frame. */
+    public IbisConverter(Bridge bridge, boolean keepAnimated) {
         super(".ipv", "ibisPaint", bridge);
+        this.keepAnimated = keepAnimated;
     }
 
     @Override
@@ -43,7 +52,7 @@ public class IbisConverter extends SequenceZipConverter {
      */
     @Override
     public void build(Manifest m, Bridge bridge, File output) throws Exception {
-        Planner planner = new Planner(m, bridge, mode -> Blend.toIbis(mode) >= 0);
+        Planner planner = new Planner(m, bridge, mode -> Blend.toIbis(mode) >= 0, keepAnimated);
         List<Planner.State> states;
         try {
             states = planner.states();

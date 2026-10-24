@@ -177,4 +177,21 @@ class PlannerTest {
         assertEquals(0xFF, v >>> 24, "opaco");
         assertTrue(Math.abs(((v >> 16) & 0xFF) - 0x40) <= 1, "multiplicar 0,5 por 0,5 da 0,25");
     }
+
+    @Test
+    void keepAnimatedLeavesAnimatedLayersSeparate() throws Exception {
+        Manifest m = manifest(6, "fondo", "linea", "marco");
+        draw(m, "fondo", 0, 6, 0xFF336699);
+        draw(m, "linea", 0, 3, 0xFF000000);
+        draw(m, "linea", 3, 3, 0xFFFF0000);
+        draw(m, "marco", 0, 6, 0xFFFFFFFF);
+        m.layers.add(folder("g", "normal", 255, false));
+        m.layers.add(layer("fondo", "normal", 255, true, "g"));
+        m.layers.add(layer("linea", "normal", 255, true, "g"));
+        m.layers.add(layer("marco", "normal", 255, true, null));
+        assertEquals(1, new Planner(m, bridge, null).states().get(0).planes.size(), "todo normal se funde");
+        List<Planner.Plane> planes = new Planner(m, bridge, null, true).states().get(0).planes;
+        assertEquals(3, planes.size(), "fondo, la capa animada aunque esté en una carpeta, y el marco");
+        assertEquals("linea", planes.get(1).name);
+    }
 }

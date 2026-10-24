@@ -121,4 +121,19 @@ class IbisWriterTest {
             assertTrue(worst <= 3, "tramo " + i + ": diferencia máxima " + worst);
         }
     }
+
+    /** Con capas animadas separadas hay una capa más por frame que fundiéndolas con lo de arriba. */
+    @Test
+    void animatedLayersCanStaySeparateOrFuse() throws Exception {
+        Manifest m = scene();
+        draw(m, "marco", 0, 6, 0xFFFFFFFF); // otra capa normal encima de la animada
+        m.tracks.add("marco");
+        m.layers.add(layer("marco", "normal", 255, true));
+        File separate = new File(tmp, "separadas.ipv"), fused = new File(tmp, "fundidas.ipv");
+        new IbisConverter(bridge, true).build(m, bridge, separate);
+        new IbisConverter(bridge, false).build(m, bridge, fused);
+        // por tramo: fondo, sombra, linea y marco frente a fondo, sombra y linea+marco
+        assertEquals(2 * (4 + 1) + 1, IbisConverter.describe(separate.getPath()).size());
+        assertEquals(2 * (3 + 1) + 1, IbisConverter.describe(fused.getPath()).size());
+    }
 }

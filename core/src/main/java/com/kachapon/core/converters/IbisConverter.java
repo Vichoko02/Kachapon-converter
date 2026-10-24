@@ -114,7 +114,7 @@ public class IbisConverter extends SequenceZipConverter {
                         alpha = p.opacity / 255f;
                         name = p.name;
                     }
-                    imageChunk(out, now, layerId, 1, 4, rpng(rotated(px), w, h, legacy));
+                    imageChunk(out, now, layerId, 1, 4, rpng(px, w, h, legacy));
                     layerSub(l, false, layerId, alpha, blend, name, folderId, 0, Integer.MIN_VALUE, -1);
                 }
                 // Primero las capas y después su carpeta de frame, como guarda ibisPaint; la capa actual es la de más arriba
@@ -233,17 +233,6 @@ public class IbisConverter extends SequenceZipConverter {
         byte[] b = s.getBytes(StandardCharsets.UTF_8);
         c.writeShort(b.length);
         c.write(b);
-    }
-
-    /**
-     * ibisPaint muestra girado 180° lo que escribe rpng() tal cual (medido con la exportación de ibisPaint), aunque
-     * place() lea derecho los .ipv reales: se gira el dibujo antes de escribirlo. Un .ipv generado por nosotros se
-     * lee de vuelta girado 180°.
-     */
-    private static int[] rotated(int[] argb) {
-        int[] out = new int[argb.length];
-        for (int i = 0; i < out.length; i++) out[i] = argb[out.length - 1 - i];
-        return out;
     }
 
     /** Inverso de place(): filas de abajo arriba, tramos saltado/visible sobre el rectángulo usado y PNG consumido al revés. */

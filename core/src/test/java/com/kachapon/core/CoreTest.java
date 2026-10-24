@@ -39,10 +39,7 @@ class CoreTest {
             FrameRef e = expected.frames.get(i), g = got.frames.get(i);
             assertEquals(e.frame, g.frame);
             assertEquals(e.hold, g.hold);
-            int[] expectedPx = Png.decode(ref.readFrame(e)), got180 = Png.decode(check.readFrame(g));
-            for (int k = 0; k < expectedPx.length; k++) { // el escritor gira 180° (así lo muestra bien ibisPaint)
-                assertEquals(expectedPx[k], got180[got180.length - 1 - k], "imagen " + e.path + " px " + k);
-            }
+            assertArrayEquals(Png.decode(ref.readFrame(e)), Png.decode(check.readFrame(g)), "imagen " + e.path);
         }
     }
 

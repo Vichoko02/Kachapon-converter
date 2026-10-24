@@ -114,8 +114,8 @@ class IbisWriterTest {
             int[] expected = planner.compose(states.get(i));
             int[] read = Png.decode(check.readFrame(got.frames.get(i)));
             int worst = 0;
-            for (int k = 0; k < expected.length; k++) { // el escritor gira 180°, como en ipvWriteRead
-                int e = expected[k], r = read[read.length - 1 - k];
+            for (int k = 0; k < expected.length; k++) {
+                int e = expected[k], r = read[k];
                 if ((e >>> 24) == 0 && (r >>> 24) == 0) continue;
                 for (int sh = 0; sh < 32; sh += 8) worst = Math.max(worst, Math.abs(((e >>> sh) & 0xFF) - ((r >>> sh) & 0xFF)));
             }
@@ -192,7 +192,7 @@ class IbisWriterTest {
             int[] read = Png.decode(check.readFrame(got.frames.get(i)));
             int worst = 0;
             for (int k = 0; k < expected.length; k++) {
-                int e = expected[k], r = read[read.length - 1 - k];
+                int e = expected[k], r = read[k];
                 if ((e >>> 24) == 0 && (r >>> 24) == 0) continue;
                 for (int sh = 0; sh < 32; sh += 8) worst = Math.max(worst, Math.abs(((e >>> sh) & 0xFF) - ((r >>> sh) & 0xFF)));
             }

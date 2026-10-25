@@ -41,7 +41,7 @@ public class ClipConverter extends SequenceZipConverter {
     @Override
     public void build(Manifest m, Bridge bridge, File output) throws Exception {
         // Cada capa animada vuelve a ser una carpeta de animación y las quietas, capas normales; las carpetas conservan su modo
-        List<ClipWriter.Node> roots = nodes(m, bridge, m.allLayers(), null);
+        List<ClipWriter.Node> roots = nodes(m, bridge, m.allLayers(), null, new int[1]);
         if (roots.isEmpty()) throw new Exception("La animación no tiene frames.");
         List<Drawing> visible = flatten(m, bridge);
         byte[] preview = visible.isEmpty() ? new byte[0] : visible.get(0).png;
@@ -49,14 +49,15 @@ public class ClipConverter extends SequenceZipConverter {
     }
 
     /** Hijos de parent (null = raíz), de abajo arriba. */
-    private static List<ClipWriter.Node> nodes(Manifest m, Bridge bridge, List<Manifest.Layer> all, String parent) throws IOException {
+    private static List<ClipWriter.Node> nodes(Manifest m, Bridge bridge, List<Manifest.Layer> all, String parent, int[] done) throws IOException {
         List<ClipWriter.Node> out = new ArrayList<>();
         for (Manifest.Layer l : all) {
             if (!Objects.equals(l.parent, parent)) continue;
             String blend = l.blend == null ? "normal" : l.blend;
             if (l.folder()) {
-                out.add(ClipWriter.Node.folder(l.name, l.visible, l.opacity, blend, l.passthrough, nodes(m, bridge, all, l.id)));
+                out.add(ClipWriter.Node.folder(l.name, l.visible, l.opacity, blend, l.passthrough, nodes(m, bridge, all, l.id, done)));
             } else {
+                bridge.progress(done[0]++ / (double) Math.max(1, m.tracks.size()), "Clip Studio: capa " + l.name);
                 out.add(ClipWriter.Node.paint(l.name, l.visible, l.opacity, blend, flatten(m, bridge, Collections.singletonList(l.track))));
             }
         }
@@ -68,6 +69,7 @@ public class ClipConverter extends SequenceZipConverter {
         private final Map<String, long[]> externals = new HashMap<>(); // id -> {posición, largo}
         private Map<Long, Map<String, Object>> layers, mipmaps, mipmapInfos, offscreens;
         private int width, height;
+        private int visited; // capas y cels ya leídos, para el avance
 
         Native(RandomAccessFile f) {
             this.f = f;
@@ -176,7 +178,10 @@ public class ClipConverter extends SequenceZipConverter {
                 Map<String, Object> cel = cels.get(celName);
                 if (cel == null) throw new Exception("La línea de tiempo usa el cel \"" + celName + "\", que no está en \"" + name + "\".");
                 long celId = lng(cel, "MainId");
-                if (!pngs.containsKey(celId)) pngs.put(celId, celPng(cel));
+                if (!pngs.containsKey(celId)) {
+                    bridge.progress(++visited / (double) Math.max(1, layers.size()), "Clip Studio: " + name);
+                    pngs.put(celId, celPng(cel));
+                }
                 if (pngs.get(celId) == null) continue; // cel vacío: hueco
                 m.frames.add(new FrameRef(track, at, next - at, bridge.writeFrame(track, at, pngs.get(celId))));
             }

@@ -18,8 +18,36 @@ public class Bridge {
     public static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     public final File dir;
 
+    /** Quien quiera saber cómo va la conversión: fracción 0..1 del total y qué se está haciendo. */
+    public interface Progress {
+        void update(double fraction, String stage);
+    }
+
+    private Progress listener = (fraction, stage) -> { };
+    private double from = 0, to = 1;
+
     public Bridge(String dir) {
         this.dir = new File(dir);
+    }
+
+    public void onProgress(Progress p) {
+        listener = p == null ? (fraction, stage) -> { } : p;
+    }
+
+    /** La fase que empieza ocupa de 'from' a 'to' del avance total. */
+    public void phase(double from, double to) {
+        this.from = from;
+        this.to = to;
+    }
+
+    /** Avance dentro de la fase actual (0..1). Los conversores lo llaman en sus bucles largos. */
+    public void progress(double fraction, String stage) {
+        listener.update(from + (to - from) * Math.max(0, Math.min(1, fraction)), stage);
+    }
+
+    /** Borra la carpeta del puente entera (los PNG intermedios ocupan cientos de MB). */
+    public void clean() throws IOException {
+        if (dir.exists()) delete(dir);
     }
 
     public void reset() throws IOException {

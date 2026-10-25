@@ -96,7 +96,9 @@ public class IbisConverter extends SequenceZipConverter {
             DataOutputStream l = new DataOutputStream(layers);
             int id = 2, lastFolder = 0, count = 1;
             int[] blank = null;
+            int stateNo = 0;
             for (Planner.State s : states) {
+                bridge.progress(stateNo++ / (double) states.size(), "ibisPaint: carpeta de frame " + stateNo + " de " + states.size());
                 int n = Math.max(1, s.planes.size()), first = id, folderId = id + n;
                 for (int k = 0; k < n; k++) {
                     int layerId = first + k;
@@ -355,6 +357,8 @@ public class IbisConverter extends SequenceZipConverter {
                 durations.add(1);
             }
             for (Layer frame : frames) {
+                int shown = frames.indexOf(frame);
+                bridge.progress(shown / (double) frames.size(), "ibisPaint: leyendo frame " + (shown + 1) + " de " + frames.size());
                 int[] canvas = render(roots, frame, cache);
                 pngs.add(isBlank(canvas) ? null : Png.encode(canvas, width, height));
                 durations.add(Math.max(1, frame.duration));

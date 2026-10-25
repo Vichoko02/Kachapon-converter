@@ -83,6 +83,7 @@ public class KritaConverter extends Converter {
             }
             for (File f : new HashSet<>(exported.values())) f.delete();
             dir.delete();
+            bridge.progress((u + 1) / (double) leaves.size(), "Krita: capa " + (u + 1) + " de " + leaves.size() + " (" + layer.name + ")");
             System.err.println("Krita: capa " + (u + 1) + "/" + leaves.size() + " \"" + layer.name + "\"");
         }
         copy.delete();
@@ -319,6 +320,7 @@ public class KritaConverter extends Converter {
             }
             if (n == 0 || end < m.duration) keyframe(zos, channel, file, n, end, null, m);
             put(zos, IMAGE + "/layers/" + file + ".keyframes.xml", xml(kd, "-//KDE//DTD krita-keyframes 1.0//EN", "http://www.calligra.org/DTD/krita-keyframes-1.0.dtd"));
+            bridge.progress(counter[0] / (double) Math.max(1, m.layers.size()), "Krita: escribiendo " + l.name);
         }
     }
 
@@ -368,7 +370,19 @@ public class KritaConverter extends Converter {
     }
 
     /** Ejecuta Krita sin ventana para exportar; falla con un mensaje claro si no está instalado o no termina. */
+    // Una sola exportación de Krita a la vez: varias conversiones pueden compartir el programa sin pisarse
+    private static final java.util.concurrent.Semaphore KRITA = new java.util.concurrent.Semaphore(1);
+
     private static int krita(String... args) throws Exception {
+        KRITA.acquire();
+        try {
+            return runKrita(args);
+        } finally {
+            KRITA.release();
+        }
+    }
+
+    private static int runKrita(String... args) throws Exception {
         List<String> cmd = new ArrayList<>();
         cmd.add(kritaExecutable());
         cmd.addAll(Arrays.asList(args));

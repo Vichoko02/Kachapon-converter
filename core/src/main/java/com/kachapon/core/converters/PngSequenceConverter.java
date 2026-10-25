@@ -72,6 +72,7 @@ public class PngSequenceConverter extends Converter {
                     try (OutputStream os = new FileOutputStream(new File(output, String.format(Locale.ROOT, "%s_%0" + digits + "d.png", base, t + 1)))) {
                         os.write(d.png);
                     }
+                    bridge.progress((t + 1) / (double) Math.max(1, m.duration), "Secuencia PNG: frame " + (t + 1) + " de " + m.duration);
                 }
             }
         } catch (Exception e) {

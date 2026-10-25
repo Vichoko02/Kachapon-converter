@@ -21,14 +21,27 @@ import javafx.stage.Stage;
 
 import java.io.File;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class MainApp extends Application {
+
+    /** Conversiones que corren a la vez; las demás esperan en cola. Krita se serializa por dentro, el resto va en paralelo. */
+    private static final int MAX_AT_ONCE = 3;
 
     private TextField inputField;
     private Label dropTitle;
     private TextField outputDirField;
     private Label statusLabel;
     private Button convertBtn;
+    private CheckBox legacyCheck;
+    private VBox jobsBox;
+    private final ExecutorService pool = Executors.newFixedThreadPool(MAX_AT_ONCE, r -> {
+        Thread t = new Thread(r, "conversion");
+        t.setDaemon(true); // cerrar la ventana no debe dejar el programa colgado esperando conversiones
+        return t;
+    });
+    private final java.util.Set<String> activeOutputs = new java.util.HashSet<>(); // solo desde el hilo de JavaFX
     private final java.util.Map<String, CheckBox> srcChecks = new java.util.HashMap<>();
     private final java.util.Map<String, CheckBox> dstChecks = new java.util.HashMap<>();
 
@@ -156,7 +169,11 @@ public class MainApp extends Application {
             dstChecks.put(f[0], c);
             dstCheckRow.getChildren().add(c);
         }
-        dstChecksBox.getChildren().addAll(dstTitle, dstCheckRow);
+        // Solo cuenta si el destino es .ipv; se decide al pulsar Convertir, así cada conversión puede llevar el suyo
+        legacyCheck = new CheckBox("ibisPaint: formato compatible con versiones antiguas (legacy)");
+        legacyCheck.setSelected(Boolean.getBoolean("kachapon.ibis.legacy"));
+        legacyCheck.setStyle("-fx-text-fill: #374151;");
+        dstChecksBox.getChildren().addAll(dstTitle, dstCheckRow, legacyCheck);
 
         // Botón convertir
         convertBtn = new Button("Convertir archivo");
@@ -170,9 +187,18 @@ public class MainApp extends Application {
         statusLabel.setTextFill(Color.web("#6b7280"));
         statusLabel.setPadding(new Insets(8, 0, 0, 0));
 
-        root.getChildren().addAll(title, subtitle, srcBox, srcChecksBox, dirBox, dstChecksBox, convertBtn, statusLabel);
+        // Conversiones en curso y terminadas, la más reciente arriba
+        Label jobsTitle = new Label("Conversiones");
+        jobsTitle.setFont(Font.font("Segoe UI", FontWeight.SEMI_BOLD, 13));
+        jobsTitle.setTextFill(Color.web("#374151"));
+        jobsBox = new VBox(8);
 
-        Scene scene = new Scene(root, 640, 720);
+        root.getChildren().addAll(title, subtitle, srcBox, srcChecksBox, dirBox, dstChecksBox, convertBtn, statusLabel, jobsTitle, jobsBox);
+
+        ScrollPane scroll = new ScrollPane(root);
+        scroll.setFitToWidth(true);
+        scroll.setStyle("-fx-background: #f5f7fa; -fx-background-color: #f5f7fa;");
+        Scene scene = new Scene(scroll, 660, 820);
         scene.getStylesheets().add(getClass().getResource("app.css").toExternalForm());
         primaryStage.setScene(scene);
         primaryStage.show();
@@ -277,37 +303,67 @@ public class MainApp extends Application {
             return;
         }
 
+        // Dos conversiones no pueden escribir el mismo archivo
+        String key = new File(output).getAbsolutePath().toLowerCase();
+        if (!activeOutputs.add(key)) {
+            showAlert("Ya hay una conversión en curso que escribe " + output);
+            return;
+        }
+
         markSingle(srcChecks, srcExt);
         markSingle(dstChecks, dstExt);
-
-        convertBtn.setDisable(true);
-        statusLabel.setText("Convirtiendo...");
+        statusLabel.setText("Conversión añadida: " + new File(input).getName());
         statusLabel.setTextFill(Color.web("#6b7280"));
 
-        new Thread(() -> {
+        // La tarjeta de esta conversión: nombre, barra de progreso y qué está haciendo
+        Label name = new Label(new File(input).getName() + "  →  " + new File(output).getName());
+        name.setFont(Font.font("Segoe UI", FontWeight.SEMI_BOLD, 12));
+        name.setTextFill(Color.web("#1f2937"));
+        ProgressBar bar = new ProgressBar(ProgressIndicator.INDETERMINATE_PROGRESS); // en cola hasta que llegue el primer aviso
+        bar.setMaxWidth(Double.MAX_VALUE);
+        Label stage = new Label("En cola");
+        stage.setFont(Font.font("Segoe UI", 11));
+        stage.setTextFill(Color.web("#6b7280"));
+        VBox card = new VBox(6, name, bar, stage);
+        card.setPadding(new Insets(10, 12, 10, 12));
+        card.setStyle("-fx-background-color: white; -fx-background-radius: 8; -fx-border-color: #e5e7eb; -fx-border-radius: 8;");
+        jobsBox.getChildren().add(0, card);
+
+        boolean legacy = legacyCheck.isSelected(); // se lee ahora: la casilla puede cambiar mientras la conversión corre
+        pool.submit(() -> {
+            ConversionResult res = null;
+            Throwable crash = null;
             try {
-                ConversionResult res = new Orchestrator().run(input, output);
-                javafx.application.Platform.runLater(() -> {
-                    convertBtn.setDisable(false);
-                    if (res.success) {
-                        statusLabel.setText("Completado: " + res.outputPath);
-                        statusLabel.setTextFill(Color.web("#15803d"));
-                        showAlert("Archivo generado:\n" + res.outputPath);
-                    } else {
-                        statusLabel.setText("Falló la conversión");
-                        statusLabel.setTextFill(Color.web("#dc2626"));
-                        showAlert("Error: " + res.error);
-                    }
-                });
-            } catch (Throwable ex) { // también los Error: si no, el botón se quedaba desactivado para siempre
-                javafx.application.Platform.runLater(() -> {
-                    convertBtn.setDisable(false);
-                    statusLabel.setText("Excepción");
-                    statusLabel.setTextFill(Color.web("#dc2626"));
-                    showAlert("Excepción: " + (ex.getMessage() != null ? ex.getMessage() : ex.toString()));
-                });
+                res = new Orchestrator()
+                        .legacyIbis(legacy)
+                        .onProgress((fraction, what) -> javafx.application.Platform.runLater(() -> {
+                            bar.setProgress(fraction);
+                            stage.setText(Math.round(fraction * 100) + " %  ·  " + what);
+                        }))
+                        .run(input, output);
+            } catch (Throwable ex) { // también los Error: si no, la tarjeta se quedaría "en curso" para siempre
+                crash = ex;
             }
-        }).start();
+            ConversionResult done = res;
+            Throwable failure = crash;
+            javafx.application.Platform.runLater(() -> {
+                activeOutputs.remove(key);
+                if (failure != null) {
+                    bar.setProgress(0);
+                    stage.setText("Excepción: " + (failure.getMessage() != null ? failure.getMessage() : failure.toString()));
+                    stage.setTextFill(Color.web("#dc2626"));
+                } else if (done.success) {
+                    bar.setProgress(1);
+                    stage.setText("Listo: " + done.outputPath);
+                    stage.setTextFill(Color.web("#15803d"));
+                } else {
+                    bar.setProgress(0);
+                    stage.setText("Falló: " + done.error);
+                    stage.setTextFill(Color.web("#dc2626"));
+                }
+                stage.setWrapText(true);
+            });
+        });
     }
 
     private void showAlert(String msg) {

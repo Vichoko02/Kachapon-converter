@@ -27,7 +27,7 @@ import java.util.concurrent.Executors;
 public class MainApp extends Application {
 
     /** Conversiones que corren a la vez; las demás esperan en cola. Krita se serializa por dentro, el resto va en paralelo. */
-    private static final int MAX_AT_ONCE = 3;
+    private static final int MAX_AT_ONCE = (int) Math.max(1, Math.min(3, Runtime.getRuntime().maxMemory() >> 30 >> 1)); // ~2 GB de heap por conversión
 
     private TextField inputField;
     private Label dropTitle;

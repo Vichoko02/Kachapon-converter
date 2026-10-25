@@ -95,7 +95,8 @@ public final class Planner {
             for (Map.Entry<String, Integer> e : drawings.entrySet()) if (e.getValue() > 1) animated.add(e.getKey());
         }
         // Las imágenes recientes se guardan para no volver a decodificarlas ni a fundirlas; el límite sale del tamaño del lienzo
-        int capacity = (int) Math.max(6, 300_000_000L / (4L * Math.max(1, w) * Math.max(1, h)));
+        long budget = Math.min(1_000_000_000L, Runtime.getRuntime().maxMemory() / 8); // cada conversión simultánea tiene su caché
+        int capacity = (int) Math.max(6, budget / (4L * Math.max(1, w) * Math.max(1, h)));
         this.cache = new LinkedHashMap<String, int[]>(16, 0.75f, true) {
             @Override
             protected boolean removeEldestEntry(Map.Entry<String, int[]> eldest) {

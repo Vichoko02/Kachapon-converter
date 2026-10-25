@@ -542,8 +542,9 @@ final class ClipWriter {
             for (int x = 0; x < dw; x++) {
                 int x0 = (int) ((long) x * sw / dw), x1 = Math.max(x0 + 1, (int) (((long) (x + 1) * sw + dw - 1) / dw));
                 long a = 0, r = 0, g = 0, b = 0, n = 0;
-                for (int yy = y0; yy < Math.min(y1, sh); yy++) {
-                    for (int xx = x0; xx < Math.min(x1, sw); xx++) {
+                int yEnd = Math.min(y1, sh), xEnd = Math.min(x1, sw);
+                for (int yy = y0; yy < yEnd; yy++) {
+                    for (int xx = x0; xx < xEnd; xx++) {
                         int c = src[yy * sw + xx], al = c >>> 24;
                         a += al;
                         r += (long) ((c >> 16) & 0xFF) * al;

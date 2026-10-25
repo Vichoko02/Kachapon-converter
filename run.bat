@@ -32,7 +32,7 @@ if %errorlevel% neq 0 (
 :: --- Compilar siempre: un build viejo no incluiria los cambios del motor ---
 if not exist "build\classes" mkdir "build\classes"
 (
-    echo [1/3] Compilando motor (core + desktop)...
+    echo [1/3] Compilando motor - core y desktop...
     javac -encoding UTF-8 -cp "%CP%" -d build\classes ^
         core\src\main\java\com\kachapon\core\*.java ^
         core\src\main\java\com\kachapon\core\converters\*.java ^
@@ -61,11 +61,11 @@ if not exist "logs" mkdir "logs" 2>nul
 :: --- Ejecutar ---
 echo [2/3] Iniciando interfaz grafica...
 echo.
-java --enable-native-access=javafx.graphics --module-path "%CP%" -cp build\classes --add-modules javafx.controls,javafx.fxml,javafx.graphics com.kachapon.desktop.MainApp
+java --enable-native-access=javafx.graphics --module-path "%CP%" -cp "build\classes;libs\gson-2.10.1.jar" --add-modules javafx.controls,javafx.fxml,javafx.graphics com.kachapon.desktop.MainApp
 
 if %errorlevel% neq 0 (
     echo.
-    echo ERROR: La aplicacion cerro inesperadamente (codigo %errorlevel%).
+    echo ERROR: La aplicacion cerro inesperadamente, codigo %errorlevel%.
 ) else (
     echo.
     echo La aplicacion se cerro normalmente.

@@ -43,9 +43,7 @@ public class ClipConverter extends SequenceZipConverter {
         // Cada capa animada vuelve a ser una carpeta de animación y las quietas, capas normales; las carpetas conservan su modo
         List<ClipWriter.Node> roots = nodes(m, bridge, m.allLayers(), null, new int[1]);
         if (roots.isEmpty()) throw new Exception("La animación no tiene frames.");
-        List<Drawing> visible = flatten(m, bridge);
-        byte[] preview = visible.isEmpty() ? new byte[0] : visible.get(0).png;
-        ClipWriter.write(roots, preview, m.fps, m.width(), m.height(), output);
+        ClipWriter.write(roots, firstFrame(m, bridge), m.fps, m.width(), m.height(), output);
     }
 
     /** Hijos de parent (null = raíz), de abajo arriba. */

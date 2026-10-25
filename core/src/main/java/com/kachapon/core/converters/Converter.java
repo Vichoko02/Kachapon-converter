@@ -60,6 +60,21 @@ public abstract class Converter {
     }
 
     /**
+     * La imagen del primer tramo de la animación, que es la miniatura de los archivos. No combina el resto de frames (hacerlo solo para
+     * la miniatura costaba ~100 s en una escena grande). PNG vacío si no hay nada que ver y sin bytes si la animación no tiene frames.
+     */
+    protected static byte[] firstFrame(Manifest m, Bridge bridge) throws IOException {
+        Planner planner = new Planner(m, bridge, null);
+        try {
+            java.util.List<Planner.State> states = planner.states();
+            if (states.isEmpty()) return new byte[0];
+            return Png.encode(planner.compose(states.get(0)), m.width(), m.height());
+        } catch (java.io.UncheckedIOException e) {
+            throw e.getCause();
+        }
+    }
+
+    /**
      * Estas pistas como una sola: en cada frame se combinan de abajo arriba (en el orden de la lista), los huecos
      * quedan transparentes y los frames iguales seguidos se juntan en un hold.
      */

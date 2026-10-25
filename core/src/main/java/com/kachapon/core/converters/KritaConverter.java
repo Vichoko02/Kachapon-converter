@@ -55,11 +55,15 @@ public class KritaConverter extends Converter {
         tree(top, null, m, leaves);
 
         File copy = new File(bridge.dir, "krita_capa.kra");
+        byte[] knownBlank = null; // los frames vacíos de Krita salen byte a byte iguales: se reconocen sin decodificar
         for (int u = 0; u < leaves.size(); u++) {
             Element leaf = leaves.get(u);
             Manifest.Layer layer = m.layers.get(indexOf(m, leaf.getAttribute("kachapon-id")));
-            isolate(all, leaf);
-            writeCopy(inputPath, xml(doc, DOCTYPE_PUBLIC, DOCTYPE_SYSTEM), copy);
+            // Una copia reducida del documento: solo esta capa, sus carpetas y sus máscaras (Krita carga mucho menos y se copia mucho menos)
+            Document slim = (Document) doc.cloneNode(true);
+            List<Element> slimLayers = elements(child(first(slim.getDocumentElement(), "IMAGE"), "layers"), "layer");
+            Set<String> files = isolate(slimLayers, slimLayers.get(all.indexOf(leaf)));
+            writeCopy(inputPath, xml(slim, DOCTYPE_PUBLIC, DOCTYPE_SYSTEM), copy, files);
             // Una capa quieta, sin movimientos de máscaras por encima, es una sola imagen: no hace falta exportar la animación
             boolean still = !"1".equals(leaf.getAttribute("intimeline")) && !moves(leaf);
             File dir = new File(bridge.dir, "krita_export_" + u);
@@ -77,7 +81,7 @@ public class KritaConverter extends Converter {
                     if (s == null || s[0] != m.width() || s[1] != m.height()) throw new Exception("Krita exportó una imagen inválida para la capa \"" + layer.name + "\".");
                 }
                 if (png != null && held != null && Arrays.equals(png, held)) continue; // mismo dibujo: se alarga el hold
-                if (held != null && !blank(held)) m.frames.add(new FrameRef(track, start, t - start, bridge.writeFrame(track, start, held)));
+                if (held != null && !(Arrays.equals(held, knownBlank) || (blank(held) && (knownBlank = held) != null))) m.frames.add(new FrameRef(track, start, t - start, bridge.writeFrame(track, start, held)));
                 held = png;
                 start = t;
             }
@@ -161,21 +165,32 @@ public class KritaConverter extends Converter {
      * Deja visible solo esta capa y sus carpetas, todas en fusión normal y opacidad completa: así la exportación
      * trae los píxeles de la capa con sus máscaras aplicadas, y el modo de fusión y la opacidad se escriben aparte.
      */
-    private static void isolate(List<Element> all, Element leaf) {
+    private static Set<String> isolate(List<Element> all, Element leaf) {
         Set<Node> ancestors = new HashSet<>();
         for (Node n = leaf; n != null; n = n.getParentNode()) ancestors.add(n);
         for (Element el : all) {
-            boolean on = ancestors.contains(el);
-            el.setAttribute("visible", on ? "1" : "0");
-            if (on) {
+            if (ancestors.contains(el)) {
+                el.setAttribute("visible", "1");
                 el.setAttribute("opacity", "255");
                 el.setAttribute("compositeop", "normal");
+            } else if (el.getParentNode() != null) {
+                el.getParentNode().removeChild(el); // las demás capas (y sus máscaras) no hacen falta
             }
         }
+        Set<String> files = new HashSet<>();
+        collectFiles(leaf.getOwnerDocument().getDocumentElement(), files);
+        return files;
+    }
+
+    /** Nombres de archivo ("layer12") de las capas y máscaras que quedan en el documento. */
+    private static void collectFiles(Node n, Set<String> out) {
+        if (n instanceof Element && !((Element) n).getAttribute("filename").isEmpty()) out.add(((Element) n).getAttribute("filename"));
+        for (Node c = n.getFirstChild(); c != null; c = c.getNextSibling()) collectFiles(c, out);
     }
 
     /** Copia del .kra con otro maindoc.xml; mimetype va primero y sin comprimir, como lo exige Krita. */
-    private static void writeCopy(String input, byte[] maindoc, File out) throws IOException {
+    /** files: nombres de archivo de las capas que se conservan; fuera quedan las demás, las imágenes de referencia y la imagen combinada. */
+    private static void writeCopy(String input, byte[] maindoc, File out, Set<String> files) throws IOException {
         try (ZipFile zf = new ZipFile(input); ZipOutputStream zos = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(out)))) {
             zos.setLevel(Deflater.BEST_SPEED); // la copia solo vive lo que tarda Krita en exportarla
             ZipEntry mime = zf.getEntry("mimetype");
@@ -198,6 +213,13 @@ public class KritaConverter extends Converter {
             for (Enumeration<? extends ZipEntry> en = zf.entries(); en.hasMoreElements(); ) {
                 ZipEntry e = en.nextElement();
                 if (e.getName().equals("mimetype")) continue;
+                if (e.getName().startsWith("reference_images/") || e.getName().equals("mergedimage.png")) continue;
+                int at = e.getName().indexOf("/layers/");
+                if (at >= 0) { // "imagen/layers/layer12.f3" y "layer12.keyframes.xml" son de la capa "layer12"
+                    String file = e.getName().substring(at + "/layers/".length());
+                    int dot = file.indexOf('.');
+                    if (!files.contains(dot < 0 ? file : file.substring(0, dot))) continue;
+                }
                 zos.putNextEntry(new ZipEntry(e.getName()));
                 if (e.getName().equals("maindoc.xml")) {
                     zos.write(maindoc);
@@ -276,8 +298,8 @@ public class KritaConverter extends Converter {
             List<Manifest.Layer> nodes = m.allLayers();
             int[] counter = {1};
             writeLayers(zos, layers, null, nodes, m, bridge, counter);
-            List<Drawing> visible = flatten(m, bridge);
-            if (!visible.isEmpty()) put(zos, "mergedimage.png", visible.get(0).png);
+            byte[] first = firstFrame(m, bridge);
+            if (first.length > 0) put(zos, "mergedimage.png", first);
             put(zos, "maindoc.xml", xml(doc, DOCTYPE_PUBLIC, DOCTYPE_SYSTEM));
         }
     }

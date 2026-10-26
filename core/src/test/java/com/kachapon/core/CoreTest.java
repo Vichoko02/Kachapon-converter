@@ -266,6 +266,28 @@ for (int i = 0; i < expected.frames.size(); i++) {
         assertArrayEquals(img.getRGB(0, 0, 5, 4, null, 0, 5), Png.decode(png.toByteArray()));
     }
 
+    /** Un modo de fusión sin equivalente llega a los avisos de la conversión en curso, y solo a esa. */
+    @Test
+    void warningsReachTheResult() throws Exception {
+        java.util.Set<String> mine = new java.util.LinkedHashSet<>();
+        Bridge.collectWarnings(mine);
+        try {
+            assertEquals("normal", Blend.fromIbis(999));
+        } finally {
+            Bridge.collectWarnings(null);
+        }
+        assertEquals(1, mine.size());
+        assertTrue(mine.iterator().next().contains("999"), mine.toString());
+        Blend.fromIbis(999); // sin conversión en curso: solo a la consola
+        assertEquals(1, mine.size());
+
+        File bad = new File(tmp, "vacio.kra");
+        Files.write(bad.toPath(), new byte[0]);
+        ConversionResult r = new Orchestrator(new File(tmp, "bw").getPath()).run(bad.getPath(), new File(tmp, "x.clip").getPath());
+        assertFalse(r.success);
+        assertNotNull(r.warnings);
+    }
+
     @Test
     void badInputFailsCleanlyAndKeepsExistingOutput() throws Exception {
         File bad = new File(tmp, "bad.clip");

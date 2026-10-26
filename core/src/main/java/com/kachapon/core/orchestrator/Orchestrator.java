@@ -22,7 +22,7 @@ public class Orchestrator {
 
     /**
      * Puente propio en la carpeta temporal del sistema, distinto en cada conversión para poder hacer varias a la vez, y que se
-     * borra al terminar (con las pruebas y Android, que dan su carpeta, no se borra).
+     * borra al terminar (con las pruebas, que dan su carpeta, no se borra). En Android java.io.tmpdir es la caché de la app.
      */
     public Orchestrator() {
         this.bridge = new Bridge(new File(System.getProperty("java.io.tmpdir"), "kachapon_" + UUID.randomUUID()).getPath());
@@ -43,9 +43,13 @@ public class Orchestrator {
 
     /** Origen: un archivo o una carpeta de PNG. Destino "nombre.png": carpeta "nombre_Nfps" con la secuencia. */
     public ConversionResult run(String inputPath, String outputPath) {
+        java.util.Set<String> warnings = new java.util.LinkedHashSet<>();
+        Bridge.collectWarnings(warnings);
         try {
-            return convert(inputPath, outputPath);
+            ConversionResult r = convert(inputPath, outputPath);
+            return new ConversionResult(r.success, r.outputPath, r.error, new java.util.ArrayList<>(warnings));
         } finally {
+            Bridge.collectWarnings(null);
             if (ownsBridge) {
                 try {
                     bridge.clean();

@@ -141,7 +141,7 @@ public class ClipConverter extends SequenceZipConverter {
                     continue;
                 }
                 if ((type & 4096) != 0 || (!folder && type != 1)) {
-                    System.err.println("Advertencia: la capa \"" + name + "\" (tipo " + type + ") no se puede convertir y se omite.");
+                    Bridge.warn("la capa \"" + name + "\" (tipo " + type + ") no se puede convertir y se omite.");
                     continue;
                 }
                 String track = Bridge.addTrack(m, name.isEmpty() ? "animacion" : name);

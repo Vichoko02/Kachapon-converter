@@ -332,7 +332,14 @@ public class MainApp extends Application {
                 } else if (done.success) {
                     bar.setProgress(1);
                     finished(card, name, bar, stage, new File(done.outputPath));
-                    notifyUser("Exportación terminada", new File(done.outputPath).getName(), java.awt.TrayIcon.MessageType.INFO);
+                    if (!done.warnings.isEmpty()) {
+                        Label warn = new Label("Avisos:\n• " + String.join("\n• ", done.warnings));
+                        warn.setTextFill(Color.web("#b45309"));
+                        warn.setWrapText(true);
+                        card.getChildren().add(warn);
+                    }
+                    notifyUser(done.warnings.isEmpty() ? "Exportación terminada" : "Exportación terminada con avisos",
+                            new File(done.outputPath).getName(), java.awt.TrayIcon.MessageType.INFO);
                 } else {
                     bar.setProgress(0);
                     stage.setText("Falló: " + done.error);

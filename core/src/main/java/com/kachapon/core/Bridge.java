@@ -23,6 +23,22 @@ public class Bridge {
         void update(double fraction, String stage);
     }
 
+    // Avisos de la conversión que corre en este hilo; los convertidores y Blend son estáticos y no tienen el puente a mano
+    private static final ThreadLocal<java.util.Set<String>> WARNINGS = new ThreadLocal<>();
+
+    /** Aviso para la persona (una capa omitida, un modo de fusión sin equivalente): va a la consola y al resultado. */
+    public static void warn(String message) {
+        System.err.println("Advertencia: " + message);
+        java.util.Set<String> w = WARNINGS.get();
+        if (w != null) w.add(message);
+    }
+
+    /** Junta en 'into' los avisos de este hilo hasta que se llame con null. */
+    public static void collectWarnings(java.util.Set<String> into) {
+        if (into == null) WARNINGS.remove();
+        else WARNINGS.set(into);
+    }
+
     private Progress listener = (fraction, stage) -> { };
     private double from = 0, to = 1;
 

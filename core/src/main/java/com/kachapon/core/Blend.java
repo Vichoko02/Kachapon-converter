@@ -65,7 +65,7 @@ public final class Blend {
     public static int toClip(String krita) {
         Integer v = krita == null ? Integer.valueOf(0) : TO_CLIP.get(krita);
         if (v == null) {
-            System.err.println("Advertencia: el modo de fusión \"" + krita + "\" no existe en Clip Studio; se usa normal.");
+            Bridge.warn("el modo de fusión \"" + krita + "\" no existe en Clip Studio; se usa normal.");
             return 0;
         }
         return v;
@@ -75,7 +75,7 @@ public final class Blend {
     public static String fromClip(int clip) {
         String v = FROM_CLIP.get(clip);
         if (v == null) {
-            System.err.println("Advertencia: el modo de fusión " + clip + " de Clip Studio no tiene equivalente; se usa normal.");
+            Bridge.warn("el modo de fusión " + clip + " de Clip Studio no tiene equivalente; se usa normal.");
             return "normal";
         }
         return v;
@@ -134,7 +134,7 @@ public final class Blend {
     public static String fromIbis(int ibis) {
         String v = FROM_IBIS.get(ibis);
         if (v == null) {
-            System.err.println("Advertencia: el modo de fusión " + ibis + " de ibisPaint no tiene equivalente; se usa normal.");
+            Bridge.warn("el modo de fusión " + ibis + " de ibisPaint no tiene equivalente; se usa normal.");
             return "normal";
         }
         return v;

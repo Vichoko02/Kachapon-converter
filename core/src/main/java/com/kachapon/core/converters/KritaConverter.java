@@ -196,7 +196,7 @@ public class KritaConverter extends Converter {
             String type = el.getAttribute("nodetype");
             if (type.equals("referenceimages")) continue;
             if (!type.equals("paintlayer") && !type.equals("grouplayer")) {
-                System.err.println("Advertencia: la capa \"" + el.getAttribute("name") + "\" es de tipo " + type + " y se omite.");
+                Bridge.warn("la capa \"" + el.getAttribute("name") + "\" es de tipo " + type + " y se omite.");
                 continue;
             }
             Manifest.Layer l = new Manifest.Layer();
@@ -211,7 +211,7 @@ public class KritaConverter extends Converter {
             if (type.equals("paintlayer")) {
                 leaves.add(el);
                 if ("1".equals(el.getAttribute("inheritalpha"))) {
-                    System.err.println("Advertencia: la capa \"" + l.name + "\" usa 'heredar alfa' y se exporta sin él.");
+                    Bridge.warn("la capa \"" + l.name + "\" usa 'heredar alfa' y se exporta sin él.");
                 }
             } else {
                 l.passthrough = "1".equals(el.getAttribute("passthrough"));
@@ -489,7 +489,7 @@ public class KritaConverter extends Converter {
             try {
                 return runKrita(seconds, args);
             } catch (KritaTimeout e) {
-                System.err.println("Krita no respondió con la capa \"" + layer + "\" en " + seconds + " s" + (attempt == 0 ? ": se reintenta." : "."));
+                Bridge.warn("Krita no respondió con la capa \"" + layer + "\" en " + seconds + " s" + (attempt == 0 ? ": se reintenta." : "."));
                 if (attempt > 0) throw new Exception("Krita se quedó colgado exportando la capa \"" + layer + "\" (más de " + seconds + " s, dos veces).");
             } finally {
                 KRITA.release(); // siempre, también si Krita falla o se interrumpe

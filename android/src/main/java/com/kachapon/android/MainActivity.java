@@ -103,8 +103,8 @@ public class MainActivity extends AppCompatActivity {
 
     private String convert(Uri uri, String dstExt) {
         File out = new File(getCacheDir(), "output/resultado" + dstExt);
-        ConversionResult r = new Orchestrator(new File(getCacheDir(), "temp_seq").getPath())
-                .run(input.getPath(), out.getPath());
+        // Puente propio en la caché (java.io.tmpdir en Android) que se borra al terminar: los PNG intermedios ocupan cientos de MB
+        ConversionResult r = new Orchestrator().run(input.getPath(), out.getPath());
         String msg = "Error: " + r.error;
         boolean saved = false;
         if (r.success) {
@@ -113,7 +113,7 @@ public class MainActivity extends AppCompatActivity {
                 if (os == null) throw new IOException("destino no disponible");
                 copy(new FileInputStream(out), os);
                 saved = true;
-                msg = "Archivo guardado ✓";
+                msg = "Archivo guardado ✓" + (r.warnings.isEmpty() ? "" : "\nAvisos:\n• " + android.text.TextUtils.join("\n• ", r.warnings));
             } catch (IOException e) {
                 msg = "No se pudo guardar: " + e.getMessage();
             }

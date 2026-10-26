@@ -63,38 +63,53 @@ public final class Png {
             inf.end();
         }
 
-        byte[] prev = new byte[stride], cur = new byte[stride];
-        int[] argb = new int[w * h];
+        // El filtro de cada fila se deshace en sitio, con un bucle por tipo de filtro
+        byte[] zero = new byte[stride];
         for (int y = 0; y < h; y++) {
-            int filter = raw[y * (stride + 1)];
-            System.arraycopy(raw, y * (stride + 1) + 1, cur, 0, stride);
-            for (int i = 0; i < stride; i++) {
-                int a = i >= channels ? cur[i - channels] & 0xFF : 0, b = prev[i] & 0xFF;
-                int c = i >= channels ? prev[i - channels] & 0xFF : 0;
-                int add;
-                switch (filter) {
-                    case 0: add = 0; break;
-                    case 1: add = a; break;
-                    case 2: add = b; break;
-                    case 3: add = (a + b) / 2; break;
-                    case 4: {
-                        int pa = Math.abs(b - c), pb = Math.abs(a - c), pc = Math.abs(a + b - 2 * c);
-                        add = pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
-                        break;
-                    }
-                    default: throw new IOException("PNG dañado (filtro " + filter + ").");
+            int row = y * (stride + 1) + 1;
+            unfilter(raw, row, y == 0 ? zero : raw, y == 0 ? 0 : row - stride - 1, stride, channels, raw[row - 1]);
+        }
+        int[] argb = new int[w * h];
+        int d = 0;
+        for (int y = 0; y < h; y++) {
+            int o = y * (stride + 1) + 1;
+            if (channels == 4) {
+                for (int x = 0; x < w; x++, o += 4) {
+                    argb[d++] = (raw[o + 3] & 0xFF) << 24 | (raw[o] & 0xFF) << 16 | (raw[o + 1] & 0xFF) << 8 | (raw[o + 2] & 0xFF);
                 }
-                cur[i] = (byte) (cur[i] + add);
+            } else {
+                for (int x = 0; x < w; x++, o += channels) {
+                    int r, g, bl, al;
+                    if (channels <= 2) { r = g = bl = raw[o] & 0xFF; al = channels == 2 ? raw[o + 1] & 0xFF : 255; }
+                    else { r = raw[o] & 0xFF; g = raw[o + 1] & 0xFF; bl = raw[o + 2] & 0xFF; al = 255; }
+                    argb[d++] = al << 24 | r << 16 | g << 8 | bl;
+                }
             }
-            for (int x = 0; x < w; x++) {
-                int o = x * channels, r, g, bl, al;
-                if (channels <= 2) { r = g = bl = cur[o] & 0xFF; al = channels == 2 ? cur[o + 1] & 0xFF : 255; }
-                else { r = cur[o] & 0xFF; g = cur[o + 1] & 0xFF; bl = cur[o + 2] & 0xFF; al = channels == 4 ? cur[o + 3] & 0xFF : 255; }
-                argb[y * w + x] = al << 24 | r << 16 | g << 8 | bl;
-            }
-            byte[] t = prev; prev = cur; cur = t;
         }
         return argb;
+    }
+
+    /** Deshace el filtro PNG de una fila (stride bytes desde row) usando la fila anterior (desde po en prev; ceros en la primera). */
+    private static void unfilter(byte[] raw, int row, byte[] prev, int po, int stride, int bpp, int filter) throws IOException {
+        int end = row + stride, first = Math.min(row + bpp, end);
+        switch (filter) {
+            case 0: break;
+            case 1: for (int i = first; i < end; i++) raw[i] += raw[i - bpp]; break;
+            case 2: for (int i = row, j = po; i < end; i++, j++) raw[i] += prev[j]; break;
+            case 3:
+                for (int i = row, j = po; i < first; i++, j++) raw[i] += (byte) ((prev[j] & 0xFF) >> 1);
+                for (int i = first, j = po + (first - row); i < end; i++, j++) raw[i] += (byte) (((raw[i - bpp] & 0xFF) + (prev[j] & 0xFF)) >> 1);
+                break;
+            case 4:
+                for (int i = row, j = po; i < first; i++, j++) raw[i] += prev[j]; // sin vecino a la izquierda, Paeth es "arriba"
+                for (int i = first, j = po + (first - row); i < end; i++, j++) {
+                    int a = raw[i - bpp] & 0xFF, b = prev[j] & 0xFF, c = prev[j - bpp] & 0xFF;
+                    int pa = Math.abs(b - c), pb = Math.abs(a - c), pc = Math.abs(a + b - 2 * c);
+                    raw[i] += (byte) (pa <= pb && pa <= pc ? a : pb <= pc ? b : c);
+                }
+                break;
+            default: throw new IOException("PNG dañado (filtro " + filter + ").");
+        }
     }
 
     /** PNG RGBA de 8 bits a partir de píxeles ARGB (sin premultiplicar). */

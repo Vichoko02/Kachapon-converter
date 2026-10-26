@@ -535,14 +535,19 @@ final class ClipWriter {
     }
 
     /** Promedio por áreas (con alfa premultiplicado) para el mipmap siguiente. */
-    private static int[] shrink(int[] src, int sw, int sh, int dw, int dh) {
+    static int[] shrink(int[] src, int sw, int sh, int dw, int dh) {
         int[] out = new int[dw * dh];
+        int[] xs = new int[dw], xe = new int[dw]; // columnas de origen [xs, xe) de cada columna de destino, calculadas una vez
+        for (int x = 0; x < dw; x++) {
+            xs[x] = (int) ((long) x * sw / dw);
+            xe[x] = Math.min(Math.max(xs[x] + 1, (int) (((long) (x + 1) * sw + dw - 1) / dw)), sw);
+        }
         for (int y = 0; y < dh; y++) {
-            int y0 = (int) ((long) y * sh / dh), y1 = Math.max(y0 + 1, (int) (((long) (y + 1) * sh + dh - 1) / dh));
+            int y0 = (int) ((long) y * sh / dh);
+            int yEnd = Math.min(Math.max(y0 + 1, (int) (((long) (y + 1) * sh + dh - 1) / dh)), sh);
             for (int x = 0; x < dw; x++) {
-                int x0 = (int) ((long) x * sw / dw), x1 = Math.max(x0 + 1, (int) (((long) (x + 1) * sw + dw - 1) / dw));
-                long a = 0, r = 0, g = 0, b = 0, n = 0;
-                int yEnd = Math.min(y1, sh), xEnd = Math.min(x1, sw);
+                int x0 = xs[x], xEnd = xe[x];
+                long a = 0, r = 0, g = 0, b = 0, n = (long) (yEnd - y0) * (xEnd - x0);
                 for (int yy = y0; yy < yEnd; yy++) {
                     for (int xx = x0; xx < xEnd; xx++) {
                         int c = src[yy * sw + xx], al = c >>> 24;
@@ -550,7 +555,6 @@ final class ClipWriter {
                         r += (long) ((c >> 16) & 0xFF) * al;
                         g += (long) ((c >> 8) & 0xFF) * al;
                         b += (long) (c & 0xFF) * al;
-                        n++;
                     }
                 }
                 if (a == 0) continue;

@@ -34,7 +34,7 @@ public class MainApp extends Application {
     private TextField outputDirField;
     private Label statusLabel;
     private Button convertBtn;
-    private CheckBox legacyCheck;
+    private ComboBox<String> dstCombo;
     private VBox jobsBox;
     private final ExecutorService pool = Executors.newFixedThreadPool(MAX_AT_ONCE, r -> {
         Thread t = new Thread(r, "conversion");
@@ -43,7 +43,6 @@ public class MainApp extends Application {
     });
     private final java.util.Set<String> activeOutputs = new java.util.HashSet<>(); // solo desde el hilo de JavaFX
     private final java.util.Map<String, CheckBox> srcChecks = new java.util.HashMap<>();
-    private final java.util.Map<String, CheckBox> dstChecks = new java.util.HashMap<>();
 
     private static final String[][] FORMATS = {
             {".kra", "Krita (.kra)"},
@@ -158,22 +157,15 @@ public class MainApp extends Application {
         VBox dstChecksBox = new VBox(8);
         dstChecksBox.setPadding(new Insets(14));
         dstChecksBox.setStyle("-fx-background-color: white; -fx-background-radius: 10; -fx-border-color: #e5e7eb; -fx-border-radius: 10;");
-        Label dstTitle = new Label("Formato destino (se detecta solo al elegir archivo)");
+        Label dstTitle = new Label("Formato destino");
         dstTitle.setFont(Font.font("Segoe UI", FontWeight.SEMI_BOLD, 13));
         dstTitle.setTextFill(Color.web("#374151"));
 
-        HBox dstCheckRow = new HBox(12);
-        for (String[] f : FORMATS) {
-            CheckBox c = new CheckBox(f[1]);
-            c.setStyle("-fx-text-fill: #374151;");
-            dstChecks.put(f[0], c);
-            dstCheckRow.getChildren().add(c);
-        }
-        // Solo cuenta si el destino es .ipv; se decide al pulsar Convertir, así cada conversión puede llevar el suyo
-        legacyCheck = new CheckBox("ibisPaint: formato compatible con versiones antiguas (legacy)");
-        legacyCheck.setSelected(Boolean.getBoolean("kachapon.ibis.legacy"));
-        legacyCheck.setStyle("-fx-text-fill: #374151;");
-        dstChecksBox.getChildren().addAll(dstTitle, dstCheckRow, legacyCheck);
+        // ibisPaint siempre sale en formato legacy: es compatible con las versiones antiguas y con las nuevas
+        dstCombo = new ComboBox<>();
+        for (String[] f : FORMATS) dstCombo.getItems().add(f[1]);
+        dstCombo.getSelectionModel().select(1); // Clip Studio
+        dstChecksBox.getChildren().addAll(dstTitle, dstCombo);
 
         // Botón convertir
         convertBtn = new Button("Convertir archivo");
@@ -235,7 +227,6 @@ public class MainApp extends Application {
         inputField.setText(f.getAbsolutePath());
         dropTitle.setText(f.getName());
         markSingle(srcChecks, ext);
-        clear(dstChecks);
         statusLabel.setText("Origen detectado: " + ext.toUpperCase());
         return true;
     }
@@ -257,26 +248,13 @@ public class MainApp extends Application {
         if (i > 0) base = base.substring(0, i);
         // Un PNG representa toda su carpeta: el nombre sale de la carpeta, sin el sufijo de fps
         if (getExt(in.getName()).equalsIgnoreCase(".png")) base = in.getParentFile().getName().replaceAll("_\\d+fps$", "");
-        String ext = selectedExt(dstChecks);
-        if (ext.isEmpty()) ext = ".clip";
-        return dir + File.separator + base + ext;
-    }
-
-    private String selectedExt(java.util.Map<String, CheckBox> map) {
-        for (java.util.Map.Entry<String, CheckBox> e : map.entrySet()) {
-            if (e.getValue().isSelected()) return e.getKey();
-        }
-        return "";
+        return dir + File.separator + base + FORMATS[dstCombo.getSelectionModel().getSelectedIndex()][0];
     }
 
     private void markSingle(java.util.Map<String, CheckBox> map, String ext) {
         for (java.util.Map.Entry<String, CheckBox> e : map.entrySet()) {
             e.getValue().setSelected(e.getKey().equals(ext));
         }
-    }
-
-    private void clear(java.util.Map<String, CheckBox> map) {
-        for (CheckBox c : map.values()) c.setSelected(false);
     }
 
     private String getExt(String fileName) {
@@ -311,7 +289,6 @@ public class MainApp extends Application {
         }
 
         markSingle(srcChecks, srcExt);
-        markSingle(dstChecks, dstExt);
         statusLabel.setText("Conversión añadida: " + new File(input).getName());
         statusLabel.setTextFill(Color.web("#6b7280"));
 
@@ -329,13 +306,12 @@ public class MainApp extends Application {
         card.setStyle("-fx-background-color: white; -fx-background-radius: 8; -fx-border-color: #e5e7eb; -fx-border-radius: 8;");
         jobsBox.getChildren().add(0, card);
 
-        boolean legacy = legacyCheck.isSelected(); // se lee ahora: la casilla puede cambiar mientras la conversión corre
         pool.submit(() -> {
             ConversionResult res = null;
             Throwable crash = null;
             try {
                 res = new Orchestrator()
-                        .legacyIbis(legacy)
+                        .legacyIbis(true)
                         .onProgress((fraction, what) -> javafx.application.Platform.runLater(() -> {
                             bar.setProgress(fraction);
                             stage.setText(Math.round(fraction * 100) + " %  ·  " + what);
@@ -352,18 +328,70 @@ public class MainApp extends Application {
                     bar.setProgress(0);
                     stage.setText("Excepción: " + (failure.getMessage() != null ? failure.getMessage() : failure.toString()));
                     stage.setTextFill(Color.web("#dc2626"));
+                    notifyUser("La exportación falló", new File(output).getName(), java.awt.TrayIcon.MessageType.ERROR);
                 } else if (done.success) {
                     bar.setProgress(1);
-                    stage.setText("Listo: " + done.outputPath);
-                    stage.setTextFill(Color.web("#15803d"));
+                    finished(card, name, bar, stage, new File(done.outputPath));
+                    notifyUser("Exportación terminada", new File(done.outputPath).getName(), java.awt.TrayIcon.MessageType.INFO);
                 } else {
                     bar.setProgress(0);
                     stage.setText("Falló: " + done.error);
                     stage.setTextFill(Color.web("#dc2626"));
+                    notifyUser("La exportación falló", new File(output).getName(), java.awt.TrayIcon.MessageType.ERROR);
                 }
                 stage.setWrapText(true);
             });
         });
+    }
+
+    /** La tarjeta de una conversión terminada: en gris, con un enlace que muestra el archivo, y se quita sola si el archivo se borra. */
+    private void finished(VBox card, Label name, ProgressBar bar, Label stage, File out) {
+        card.setStyle("-fx-background-color: #eceef1; -fx-background-radius: 8; -fx-border-color: #d9dce1; -fx-border-radius: 8;");
+        name.setTextFill(Color.web("#6b7280"));
+        bar.setProgress(1);
+        bar.setStyle("-fx-accent: #9ca3af;");
+        Hyperlink link = new Hyperlink(out.getPath());
+        link.setStyle("-fx-text-fill: #4b5563; -fx-padding: 0;");
+        link.setWrapText(true);
+        link.setOnAction(e -> {
+            try {
+                new ProcessBuilder("explorer.exe", "/select," + out.getAbsolutePath()).start(); // Windows: abre la carpeta con el archivo marcado
+            } catch (java.io.IOException ex) {
+                stage.setText("No se pudo abrir la carpeta: " + ex.getMessage());
+            }
+        });
+        int at = card.getChildren().indexOf(stage);
+        card.getChildren().set(at, link);
+        javafx.animation.Timeline watch = new javafx.animation.Timeline();
+        watch.getKeyFrames().add(new javafx.animation.KeyFrame(javafx.util.Duration.seconds(2), e -> {
+            if (!out.exists()) {
+                jobsBox.getChildren().remove(card);
+                watch.stop();
+            }
+        }));
+        watch.setCycleCount(javafx.animation.Animation.INDEFINITE);
+        watch.play();
+    }
+
+    private java.awt.TrayIcon tray;
+
+    /** Aviso del sistema (globo de la bandeja en Windows); si no hay bandeja, un pitido. Solo desde el hilo de JavaFX. */
+    private void notifyUser(String title, String text, java.awt.TrayIcon.MessageType type) {
+        try {
+            if (tray == null && java.awt.SystemTray.isSupported()) {
+                tray = new java.awt.TrayIcon(new java.awt.image.BufferedImage(16, 16, java.awt.image.BufferedImage.TYPE_INT_ARGB), "KachaponConverter");
+                java.awt.SystemTray.getSystemTray().add(tray);
+            }
+            if (tray != null) tray.displayMessage(title, text, type);
+            else java.awt.Toolkit.getDefaultToolkit().beep();
+        } catch (Exception | java.awt.AWTError e) {
+            // el aviso es un extra: la tarjeta de la conversión ya muestra el resultado
+        }
+    }
+
+    @Override
+    public void stop() {
+        if (tray != null) java.awt.SystemTray.getSystemTray().remove(tray); // si no, el hilo de AWT mantiene vivo el programa
     }
 
     private void showAlert(String msg) {

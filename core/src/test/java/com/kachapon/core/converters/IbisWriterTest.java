@@ -164,12 +164,10 @@ class IbisWriterTest {
     }
 
     @Test
-    void defaultAndLegacyWriteTheirOwnVersions() throws Exception {
+    void writesTheLegacyVersions() throws Exception {
         Manifest m = scene();
-        File normal = new File(tmp, "normal.ipv"), legacy = new File(tmp, "legacy.ipv");
-        new IbisConverter(bridge).build(m, bridge, normal);
-        new IbisConverter(bridge, true, true).build(m, bridge, legacy);
-        assertEquals(java.util.Arrays.toString(new int[]{1410, 140100, 140100, 0x10582, 45, 3, 776, 1410, 72}), java.util.Arrays.toString(versions(normal)));
+        File legacy = new File(tmp, "legacy.ipv");
+        new IbisConverter(bridge).build(m, bridge, legacy);
         assertEquals(java.util.Arrays.toString(new int[]{1100, 110000, 110000, 0x1044C, 41, 1, 722, 1100, 40}), java.util.Arrays.toString(versions(legacy)));
         assertTrue(IbisConverter.describe(legacy.getPath()).stream().anyMatch(l -> l[2] != 0), "legacy conserva los modos de fusión");
     }
@@ -179,7 +177,7 @@ class IbisWriterTest {
     void legacyFileReadsBackLikeTheScene() throws Exception {
         Manifest m = scene();
         File ipv = new File(tmp, "legacy.ipv");
-        new IbisConverter(bridge, true, true).build(m, bridge, ipv);
+        new IbisConverter(bridge).build(m, bridge, ipv);
         Planner planner = new Planner(m, bridge, null);
 
         Bridge check = new Bridge(new File(tmp, "check").getPath());

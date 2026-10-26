@@ -311,7 +311,6 @@ public class MainApp extends Application {
             Throwable crash = null;
             try {
                 res = new Orchestrator()
-                        .legacyIbis(true)
                         .onProgress((fraction, what) -> javafx.application.Platform.runLater(() -> {
                             bar.setProgress(fraction);
                             stage.setText(Math.round(fraction * 100) + " %  ·  " + what);

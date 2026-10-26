@@ -12,8 +12,6 @@ import java.util.UUID;
 public class Orchestrator {
     private final Bridge bridge;
     private final boolean ownsBridge;
-    // Por conversión (no una propiedad global) para que varias a la vez puedan elegir distinto; el valor de partida es -Dkachapon.ibis.legacy
-    private boolean legacyIbis = Boolean.getBoolean("kachapon.ibis.legacy");
 
     public Orchestrator(String bridgeDir) {
         this.bridge = new Bridge(bridgeDir);
@@ -27,12 +25,6 @@ public class Orchestrator {
     public Orchestrator() {
         this.bridge = new Bridge(new File(System.getProperty("java.io.tmpdir"), "kachapon_" + UUID.randomUUID()).getPath());
         this.ownsBridge = true;
-    }
-
-    /** Si el destino es .ipv, escribe el formato de ibisPaint 11 (lo abren más versiones de la app) en vez del de la 14.1. */
-    public Orchestrator legacyIbis(boolean legacy) {
-        this.legacyIbis = legacy;
-        return this;
     }
 
     /** Recibe el avance de la conversión (fracción 0..1 y qué se está haciendo); se llama desde el hilo que convierte. */
@@ -70,8 +62,8 @@ public class Orchestrator {
         File out = new File(outputPath).getAbsoluteFile();
         File tmp = new File(out.getPath() + ".tmp");
         try {
-            Converter src = converterFor(srcExt, bridge, legacyIbis);
-            Converter dst = converterFor(dstExt, bridge, legacyIbis);
+            Converter src = converterFor(srcExt, bridge);
+            Converter dst = converterFor(dstExt, bridge);
             bridge.reset();
             // Leer un .kra son decenas de exportaciones de Krita y escribir es rápido; con los demás formatos el reparto es parejo
             double split = srcExt.equals(".kra") ? 0.9 : 0.5;
@@ -107,14 +99,10 @@ public class Orchestrator {
     }
 
     public static Converter converterFor(String ext, Bridge bridge) {
-        return converterFor(ext, bridge, Boolean.getBoolean("kachapon.ibis.legacy"));
-    }
-
-    public static Converter converterFor(String ext, Bridge bridge, boolean legacyIbis) {
         switch (ext) {
             case ".kra": return new KritaConverter(bridge);
             case ".clip": return new ClipConverter(bridge);
-            case ".ipv": return new IbisConverter(bridge, true, legacyIbis);
+            case ".ipv": return new IbisConverter(bridge);
             case ".png": return new PngSequenceConverter(bridge);
             default: throw new IllegalArgumentException("Formato no soportado: " + ext);
         }

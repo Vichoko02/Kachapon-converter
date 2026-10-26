@@ -1,5 +1,7 @@
 # Versiones del formato .ipv (para el modo legacy)
 
+> **Estado actual:** el programa escribe **solo** el formato legacy (versión 1100, NeedVersion 110000, cola de la 14.0 y RPNG de 41 bytes). El modo normal de la 14.1 se quitó en la limpieza (`docs/LIMPIEZA.md`, punto 1). Los modos de fusión se conservan: la muestra real de la 14.0.0 ya los usa.
+
 Fuente: `libibispaint.so` de ibisPaint **14.1.2** x86_64 (`bin/apks/ibispaint/split_config.x86_64.apk`), con símbolos, desensamblado con capstone; textos de `base.apk` (`assets/lang/en.txt`, `es.txt`). Solo hay **un** binario: todo lo que se dice de apps más viejas se deduce de cómo el lector de la 14.1.2 maneja los archivos viejos y queda marcado **sin confirmar** cuando no se puede comprobar. Las direcciones son de esa `.so`.
 
 ## Muestra real de la 14.0.0: dónde están los 21 bytes

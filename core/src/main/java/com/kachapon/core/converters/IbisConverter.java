@@ -23,13 +23,13 @@ public class IbisConverter extends SequenceZipConverter {
     private static final int ROOT = -5;
     private static final String TRACK = "ibisPaint";
 
-    // Versión del formato que se escribe. Legacy imita a ibisPaint 11.0.0, la primera con animación, para que más versiones de la app
-    // abran el archivo (docs/IBIS_VERSIONES.md): lo que impide abrirlo en una app vieja son NeedVersionForPlay/Edit, no el resto.
-    private static final int FORMAT_VERSION = 1410, FORMAT_VERSION_LEGACY = 1100;
-    private static final int NEED_VERSION_LEGACY = 110000; // NeedVersionForPlay y NeedVersionForEdit: app x 10000
+    // Versión del formato que se escribe: la de ibisPaint 11.0.0, la primera con animación, para que más versiones de la app abran
+    // el archivo (docs/IBIS_VERSIONES.md): lo que impide abrirlo en una app vieja son NeedVersionForPlay/Edit, no el resto.
+    private static final int FORMAT_VERSION = 1100, TEMPLATE_VERSION = 1410; // TEMPLATE_VERSION: la de la plantilla META_TAIL
+    private static final int NEED_VERSION = 110000; // NeedVersionForPlay y NeedVersionForEdit: app x 10000
     private static final int TAIL_NEED_PLAY = 60, TAIL_NEED_EDIT = 64, TAIL_FORMAT_VERSION = 606; // las tres versiones de la cola
 
-    private final boolean keepAnimated, legacy;
+    private final boolean keepAnimated;
 
     /** Cada capa animada queda como capa propia en cada frame (más pesado que fundirlas, pero se pueden editar por separado). */
     public IbisConverter(Bridge bridge) {
@@ -38,17 +38,8 @@ public class IbisConverter extends SequenceZipConverter {
 
     /** keepAnimated = false funde también las capas animadas: un .ipv mucho más ligero, con una sola capa por frame. */
     public IbisConverter(Bridge bridge, boolean keepAnimated) {
-        this(bridge, keepAnimated, false);
-    }
-
-    /**
-     * legacy = true escribe como ibisPaint 11.0.0: versión de formato 1100, NeedVersion 110000, RPNG de 41 bytes y la cola de 14.0;
-     * conserva los modos de fusión igual que el normal. Una app más nueva lo abre igual; una más vieja que 14.1 también debería.
-     */
-    public IbisConverter(Bridge bridge, boolean keepAnimated, boolean legacy) {
         super(".ipv", "ibisPaint", bridge);
         this.keepAnimated = keepAnimated;
-        this.legacy = legacy;
     }
 
     @Override
@@ -86,7 +77,7 @@ public class IbisConverter extends SequenceZipConverter {
             c.writeDouble(now); c.writeInt(w); c.writeInt(h); str(c, art); c.writeByte(1);
             chunk(out, CANVAS, b);
 
-            c.writeInt(0x10000 | (legacy ? FORMAT_VERSION_LEGACY : FORMAT_VERSION)); c.writeDouble(now); str(c, "ibisPaint X"); str(c, legacy ? "ver.11.0.0" : "ver.14.1.2"); str(c, "KachaponConverter");
+            c.writeInt(0x10000 | FORMAT_VERSION); c.writeDouble(now); str(c, "ibisPaint X"); str(c, "ver.11.0.0"); str(c, "KachaponConverter");
             c.write(new byte[8]); c.writeInt(1); c.writeInt(1); c.writeFloat(0.05f); c.writeFloat(0.05f); c.writeInt(2); c.writeInt(1);
             chunk(out, START_EDIT, b);
             c.writeDouble(now); c.writeDouble(1); c.writeShort(0);
@@ -117,7 +108,7 @@ public class IbisConverter extends SequenceZipConverter {
                         alpha = p.opacity / 255f;
                         name = p.name;
                     }
-                    imageChunk(out, now, layerId, 1, 4, rpng(px, w, h, legacy));
+                    imageChunk(out, now, layerId, 1, 4, rpng(px, w, h));
                     layerSub(l, false, layerId, alpha, blend, name, folderId, 0, Integer.MIN_VALUE, -1);
                 }
                 // Primero las capas y después su carpeta de frame, como guarda ibisPaint; la capa actual es la de más arriba
@@ -131,20 +122,15 @@ public class IbisConverter extends SequenceZipConverter {
             imageChunk(out, now, -1, 0, 0, Png.encode(planner.compose(states.get(0)), w, h));
             layerSub(l, false, -1, 0.5f, 0, "", Integer.MIN_VALUE, 0, Integer.MIN_VALUE, -1);
 
-            c.writeInt(legacy ? FORMAT_VERSION_LEGACY : FORMAT_VERSION); str(c, art); str(c, title); str(c, ""); str(c, ""); c.writeInt(0); c.writeInt(0); str(c, ""); str(c, "");
+            c.writeInt(FORMAT_VERSION); str(c, art); str(c, title); str(c, ""); str(c, ""); c.writeInt(0); c.writeInt(0); str(c, ""); str(c, "");
             c.writeDouble(now); c.writeDouble(now); c.writeDouble(now); c.writeLong(0); str(c, ""); c.writeInt(w); c.writeInt(h);
             str(c, ""); c.writeInt(1); str(c, ""); c.writeInt(lastFolder);
             c.writeInt(count);
             layers.writeTo(c);
-            byte[] tail = metaTail();
+            byte[] tail = legacyTail(metaTail());
             ByteBuffer t = ByteBuffer.wrap(tail);
             t.putInt(TAIL_WIDTH, w).putInt(TAIL_HEIGHT, h).putInt(TAIL_FPS, m.fps).putInt(TAIL_CURRENT_FRAME, lastFolder);
-            if (legacy) {
-                tail = legacyTail(tail);
-                t = ByteBuffer.wrap(tail);
-                t.putInt(TAIL_WIDTH, w).putInt(TAIL_HEIGHT, h).putInt(TAIL_FPS, m.fps).putInt(TAIL_CURRENT_FRAME, lastFolder);
-                t.putInt(TAIL_NEED_PLAY, NEED_VERSION_LEGACY).putInt(TAIL_NEED_EDIT, NEED_VERSION_LEGACY).putInt(TAIL_FORMAT_VERSION, FORMAT_VERSION_LEGACY);
-            }
+            t.putInt(TAIL_NEED_PLAY, NEED_VERSION).putInt(TAIL_NEED_EDIT, NEED_VERSION).putInt(TAIL_FORMAT_VERSION, FORMAT_VERSION);
             c.write(tail);
             chunk(out, META, b);
         }
@@ -179,8 +165,8 @@ public class IbisConverter extends SequenceZipConverter {
         ByteBuffer t = ByteBuffer.wrap(tail);
         int anim = 652, body = anim + 8, end = body + 72, keep = 40;
         if (tail.length != 776 || t.getInt(anim) != ANIMATION || t.getInt(anim + 4) != 72 || t.getInt(end) != -(8 + 72)
-                || t.getInt(TAIL_FORMAT_VERSION) != FORMAT_VERSION || t.getInt(TAIL_NEED_PLAY) != 140100) {
-            throw new IllegalStateException("La plantilla de MetaInfo no es la esperada para el modo legacy");
+                || t.getInt(TAIL_FORMAT_VERSION) != TEMPLATE_VERSION || t.getInt(TAIL_NEED_PLAY) != 140100) {
+            throw new IllegalStateException("La plantilla de MetaInfo no es la esperada");
         }
         byte[] out = new byte[tail.length - (72 - keep) - 22];
         System.arraycopy(tail, 0, out, 0, body + keep);                                  // hasta el final de los 40 bytes que se conservan
@@ -239,7 +225,7 @@ public class IbisConverter extends SequenceZipConverter {
     }
 
     /** Inverso de place(): filas de abajo arriba, tramos saltado/visible sobre el rectángulo usado y PNG consumido al revés. */
-    static byte[] rpng(int[] argb, int w, int h, boolean legacy) throws IOException {
+    static byte[] rpng(int[] argb, int w, int h) throws IOException {
         int minX = w, minY = h, maxX = -1, maxY = -1;
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
@@ -305,11 +291,10 @@ public class IbisConverter extends SequenceZipConverter {
 
         ByteArrayOutputStream b = new ByteArrayOutputStream();
         DataOutputStream c = new DataOutputStream(b);
-        // Cabecera de 45 bytes con el color de transparencia (bandera 2) o la antigua de 41 sin él; el byte de versión debe ser 0
-        c.writeInt(0x52504e47); c.writeInt(legacy ? 41 : 45); c.writeByte(0);
-        c.writeInt(legacy ? 1 : 3); c.writeInt(w); c.writeInt(h); c.writeInt(rw); c.writeInt(rh); c.writeInt(rx); c.writeInt(ry);
+        // La cabecera antigua de 41 bytes, sin color de transparencia (la de 45 lo agrega con la bandera 2); el byte de versión debe ser 0
+        c.writeInt(0x52504e47); c.writeInt(41); c.writeByte(0);
+        c.writeInt(1); c.writeInt(w); c.writeInt(h); c.writeInt(rw); c.writeInt(rh); c.writeInt(rx); c.writeInt(ry);
         c.writeInt(pw); c.writeInt(ph); c.writeInt(pad);
-        if (!legacy) c.writeInt(0); // color de transparencia
         c.writeInt(nRuns * 2);
         for (int i = 0; i < nRuns; i++) c.writeShort(runs[i]);
         c.writeInt(png.length);

@@ -113,7 +113,7 @@ class OrchestratorTest {
         assertEquals(0, left == null ? 0 : left.length);
     }
 
-    /** Versión de formato que lleva el MetaInfo de un .ipv: 1410 normal, 1100 legacy. */
+    /** Versión de formato que lleva el MetaInfo de un .ipv (1100: el formato de ibisPaint 11). */
     private static int ipvFormatVersion(File ipv) throws IOException {
         java.nio.ByteBuffer b = java.nio.ByteBuffer.wrap(java.nio.file.Files.readAllBytes(ipv.toPath()));
         for (int pos = 0; pos + 12 <= b.limit(); pos += 12 + b.getInt(pos + 4)) {
@@ -122,21 +122,11 @@ class OrchestratorTest {
         throw new IOException("sin MetaInfo");
     }
 
-    /** La elección del formato de ibisPaint es de cada conversión: dos a la vez pueden salir una legacy y otra normal. */
+    /** Toda conversión a .ipv sale en el formato de ibisPaint 11, también desde Android (que no elige nada). */
     @Test
-    void ibisLegacyIsChosenPerConversion() throws Exception {
-        File in = clip("legacy", 3, 0xFFFF0000);
-        File normal = new File(tmp, "normal.ipv"), legacy = new File(tmp, "legacy.ipv");
-        ExecutorService pool = Executors.newFixedThreadPool(2);
-        try {
-            Future<ConversionResult> a = pool.submit(() -> new Orchestrator().legacyIbis(false).run(in.getPath(), normal.getPath()));
-            Future<ConversionResult> b = pool.submit(() -> new Orchestrator().legacyIbis(true).run(in.getPath(), legacy.getPath()));
-            assertTrue(a.get().success);
-            assertTrue(b.get().success);
-        } finally {
-            pool.shutdownNow();
-        }
-        assertEquals(1410, ipvFormatVersion(normal));
-        assertEquals(1100, ipvFormatVersion(legacy));
+    void ibisIsAlwaysLegacy() throws Exception {
+        File in = clip("legacy", 3, 0xFFFF0000), out = new File(tmp, "legacy.ipv");
+        assertTrue(new Orchestrator().run(in.getPath(), out.getPath()).success);
+        assertEquals(1100, ipvFormatVersion(out));
     }
 }

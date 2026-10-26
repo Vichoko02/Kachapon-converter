@@ -71,7 +71,7 @@ public class KritaConverter extends Converter {
                 writeCopy(inputPath, xml(slim, DOCTYPE_PUBLIC, DOCTYPE_SYSTEM), copy, files);
                 // Una capa quieta, sin movimientos de máscaras por encima, es una sola imagen: no hace falta exportar la animación
                 boolean still = !"1".equals(leaf.getAttribute("intimeline")) && !moves(leaf);
-                exported = export(copy, dir, m.duration, !still);
+                exported = export(copy, dir, m.duration, !still, layer.name);
             }
 
             String track = Bridge.addTrack(m, layer.name);
@@ -314,18 +314,18 @@ public class KritaConverter extends Converter {
     }
 
     /** Frame (desde 0) -> PNG exportado por Krita. Sin sequence es una sola imagen que dura toda la animación. */
-    private static TreeMap<Integer, File> export(File kra, File dir, int duration, boolean sequence) throws Exception {
+    private static TreeMap<Integer, File> export(File kra, File dir, int duration, boolean sequence, String layerName) throws Exception {
         if (!dir.mkdirs() && !dir.isDirectory()) throw new IOException("No se puede crear " + dir);
-        if (!sequence) return stillFrames(kra, dir, duration, 0);
+        if (!sequence) return stillFrames(kra, dir, duration, 0, layerName);
         for (int attempt = 0; ; attempt++) {
-            int code = krita(kra.getPath(), "--export-sequence", "--export-filename", new File(dir, "frame.png").getPath());
+            int code = kritaWatched(layerName, 60 + duration, kra.getPath(), "--export-sequence", "--export-filename", new File(dir, "frame.png").getPath());
             TreeMap<Integer, File> byNumber = new TreeMap<>();
             File[] files = dir.listFiles();
             for (File f : files == null ? new File[0] : files) {
                 String digits = f.getName().replaceAll("\\D", "");
                 if (f.getName().endsWith(".png") && !digits.isEmpty()) byNumber.put(Integer.parseInt(digits), f);
             }
-            if (byNumber.isEmpty()) return stillFrames(kra, dir, duration, code); // el documento no tiene animación
+            if (byNumber.isEmpty()) return stillFrames(kra, dir, duration, code, layerName); // el documento no tiene animación
             // Krita a veces termina antes de exportar todos los frames: se reintenta una vez
             if (byNumber.size() == duration && byNumber.lastKey() - byNumber.firstKey() + 1 == duration) {
                 TreeMap<Integer, File> out = new TreeMap<>();
@@ -338,9 +338,9 @@ public class KritaConverter extends Converter {
         }
     }
 
-    private static TreeMap<Integer, File> stillFrames(File kra, File dir, int duration, int previousCode) throws Exception {
+    private static TreeMap<Integer, File> stillFrames(File kra, File dir, int duration, int previousCode, String layerName) throws Exception {
         File still = new File(dir, "still.png");
-        int code = krita(kra.getPath(), "--export", "--export-filename", still.getPath());
+        int code = kritaWatched(layerName, 60, kra.getPath(), "--export", "--export-filename", still.getPath());
         if (!still.exists()) throw new Exception("Krita no pudo exportar el .kra (código " + (code != 0 ? code : previousCode) + ").");
         TreeMap<Integer, File> out = new TreeMap<>();
         for (int t = 0; t < duration; t++) out.put(t, still);
@@ -475,16 +475,29 @@ public class KritaConverter extends Converter {
     // Una sola exportación de Krita a la vez: varias conversiones pueden compartir el programa sin pisarse
     private static final java.util.concurrent.Semaphore KRITA = new java.util.concurrent.Semaphore(1);
 
-    private static int krita(String... args) throws Exception {
-        KRITA.acquire();
-        try {
-            return runKrita(args);
-        } finally {
-            KRITA.release();
+    /** Krita no terminó a tiempo (colgado). */
+    private static final class KritaTimeout extends Exception {
+        KritaTimeout(String message) {
+            super(message);
         }
     }
 
-    private static int runKrita(String... args) throws Exception {
+    /** Una exportación con límite de tiempo (60 s más 1 s por frame): si vence se mata Krita y se reintenta una vez; a la segunda, error con la capa. */
+    private static int kritaWatched(String layer, int seconds, String... args) throws Exception {
+        for (int attempt = 0; ; attempt++) {
+            KRITA.acquire();
+            try {
+                return runKrita(seconds, args);
+            } catch (KritaTimeout e) {
+                System.err.println("Krita no respondió con la capa \"" + layer + "\" en " + seconds + " s" + (attempt == 0 ? ": se reintenta." : "."));
+                if (attempt > 0) throw new Exception("Krita se quedó colgado exportando la capa \"" + layer + "\" (más de " + seconds + " s, dos veces).");
+            } finally {
+                KRITA.release(); // siempre, también si Krita falla o se interrumpe
+            }
+        }
+    }
+
+    private static int runKrita(int seconds, String... args) throws Exception {
         List<String> cmd = new ArrayList<>();
         cmd.add(kritaExecutable());
         cmd.addAll(Arrays.asList(args));
@@ -502,17 +515,32 @@ public class KritaConverter extends Converter {
             }
         });
         drain.start();
-        if (!p.waitFor(10, TimeUnit.MINUTES)) {
-            p.destroyForcibly();
-            throw new Exception("Krita tardó demasiado en exportar el .kra.");
+        try {
+            if (!p.waitFor(seconds, TimeUnit.SECONDS)) {
+                kill(p);
+                throw new KritaTimeout("Krita tardó más de " + seconds + " s");
+            }
+        } catch (InterruptedException e) {
+            kill(p);
+            throw e;
         }
         drain.join();
         return p.exitValue();
     }
 
+    /** Krita y todo lo que lanzó (un envoltorio como krita.com deja hijos vivos si solo se mata a él). */
+    private static void kill(Process p) {
+        p.descendants().forEach(ProcessHandle::destroyForcibly);
+        p.destroyForcibly();
+    }
+
     private static String kritaExecutable() {
         String env = System.getenv("KRITA_PATH");
-        if (env != null && !env.isEmpty()) return env;
+        if (env != null && !env.isEmpty()) {
+            // krita.com es un envoltorio que lanza krita.exe y puede quedarse sin su hijo: se usa el programa directo
+            File exe = new File(env.replaceAll("(?i)\\.com$", ".exe"));
+            return exe.exists() ? exe.getPath() : env;
+        }
         File windows = new File("C:\\Program Files\\Krita (x64)\\bin\\krita.exe");
         return windows.exists() ? windows.getPath() : "krita";
     }

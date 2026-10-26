@@ -56,7 +56,7 @@ public class ClipConverter extends SequenceZipConverter {
                 out.add(ClipWriter.Node.folder(l.name, l.visible, l.opacity, blend, l.passthrough, nodes(m, bridge, all, l.id, done)));
             } else {
                 bridge.progress(done[0]++ / (double) Math.max(1, m.tracks.size()), "Clip Studio: capa " + l.name);
-                out.add(ClipWriter.Node.paint(l.name, l.visible, l.opacity, blend, flatten(m, bridge, Collections.singletonList(l.track))));
+                out.add(ClipWriter.Node.paint(l.name, l.visible, l.opacity, blend, drawings(m, bridge, l.track)));
             }
         }
         return out;

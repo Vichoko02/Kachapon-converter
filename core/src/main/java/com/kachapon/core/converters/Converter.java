@@ -75,37 +75,20 @@ public abstract class Converter {
     }
 
     /**
-     * Estas pistas como una sola: en cada frame se combinan de abajo arriba (en el orden de la lista), los huecos
-     * quedan transparentes y los frames iguales seguidos se juntan en un hold.
+     * Los dibujos de una pista seguidos desde el frame 0: los huecos son un PNG transparente y los frames iguales
+     * seguidos se juntan en un hold. Los PNG del puente se usan tal cual, sin decodificar.
      */
-    protected static java.util.List<Drawing> flatten(Manifest m, Bridge bridge, java.util.List<String> tracks) throws IOException {
+    protected static java.util.List<Drawing> drawings(Manifest m, Bridge bridge, String track) throws IOException {
         java.util.List<Drawing> out = new java.util.ArrayList<>();
-        int w = m.width(), h = m.height();
-        // Frame -> dibujo que se ve, por pista; evita recorrer todos los dibujos en cada frame
-        java.util.Map<String, FrameRef[]> at = new java.util.HashMap<>();
-        for (String track : tracks) at.put(track, new FrameRef[m.duration]);
+        FrameRef[] at = new FrameRef[m.duration]; // frame -> dibujo que se ve
         for (FrameRef f : m.frames) {
-            FrameRef[] line = at.get(f.track);
-            if (line != null) for (int t = Math.max(0, f.frame); t < Math.min(m.duration, f.frame + f.hold); t++) line[t] = f;
+            if (f.track.equals(track)) for (int t = Math.max(0, f.frame); t < Math.min(m.duration, f.frame + f.hold); t++) at[t] = f;
         }
         byte[] empty = null;
         for (int t = 0; t < m.duration; t++) {
-            int[] canvas = null;
-            byte[] single = null;
-            for (String track : tracks) {
-                FrameRef fr = at.get(track)[t];
-                if (fr == null) continue;
-                byte[] png = bridge.readFrame(fr);
-                if (single == null) {
-                    single = png;
-                } else {
-                    if (canvas == null) canvas = Png.decode(single);
-                    over(canvas, Png.decode(png), 1f);
-                }
-            }
-            byte[] png = canvas != null ? Png.encode(canvas, w, h) : single;
+            byte[] png = at[t] == null ? null : bridge.readFrame(at[t]);
             if (png == null) {
-                if (empty == null) empty = Png.encode(new int[w * h], w, h);
+                if (empty == null) empty = Png.encode(new int[m.width() * m.height()], m.width(), m.height());
                 png = empty;
             }
             Drawing last = out.isEmpty() ? null : out.get(out.size() - 1);
@@ -139,10 +122,5 @@ public abstract class Converter {
         zos.putNextEntry(new ZipEntry(name));
         zos.write(data);
         zos.closeEntry();
-    }
-
-    /** "Normal" sin premultiplicar: dst = src * opacidad sobre dst. */
-    protected static void over(int[] dst, int[] src, float opacity) {
-        Composite.over(dst, src, opacity);
     }
 }

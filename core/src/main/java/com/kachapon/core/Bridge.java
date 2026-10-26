@@ -8,9 +8,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 
 /**
- * Puente universal (temp_seq/) por el que pasa toda conversión:
- *   manifest.json   resolución, fps, pistas y frames con sus holds
- *   frames/         secuencia PNG RGBA [pista]_[layerId]_[frame].png
+ * Puente universal por el que pasa toda conversión (una carpeta temporal propia de cada conversión, ver Orchestrator):
+ *   manifest.json   resolución, fps, pistas, árbol de capas y frames con sus holds
+ *   frames/         un PNG RGBA por dibujo: pista_0001.png
  *   timesheet.xdts  hoja de tiempos
  * Solo java.io (no java.nio.file) para funcionar en Android desde API 24.
  */
@@ -130,7 +130,7 @@ public class Bridge {
         return buf.toByteArray();
     }
 
-    private static byte[] readFile(File f) throws IOException {
+    public static byte[] readFile(File f) throws IOException {
         try (InputStream is = new FileInputStream(f)) {
             return readAll(is);
         }

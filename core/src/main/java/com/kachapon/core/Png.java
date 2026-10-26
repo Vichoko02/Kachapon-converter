@@ -112,6 +112,12 @@ public final class Png {
         }
     }
 
+    /** Si el PNG no tiene ningún píxel visible (todo con alfa 0). */
+    public static boolean blank(byte[] png) throws IOException {
+        for (int c : decode(png)) if (c >>> 24 != 0) return false;
+        return true;
+    }
+
     /** PNG RGBA de 8 bits a partir de píxeles ARGB (sin premultiplicar). */
     public static byte[] encode(int[] argb, int width, int height) throws IOException {
         byte[] raw = new byte[height * (1 + width * 4)];

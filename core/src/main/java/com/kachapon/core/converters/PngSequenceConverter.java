@@ -38,7 +38,7 @@ public class PngSequenceConverter extends Converter {
         Matcher fm = FPS.matcher(dir.getName());
         int fps = fm.find() ? Integer.parseInt(fm.group(1)) : 24;
 
-        byte[] first = read(files[0]);
+        byte[] first = Bridge.readFile(files[0]);
         int[] size = Png.size(first);
         if (size == null) throw new Exception("No es un PNG válido: " + files[0].getName());
         Manifest m = new Manifest(size[0] + "x" + size[1], fps, files.length);
@@ -46,14 +46,14 @@ public class PngSequenceConverter extends Converter {
         byte[] held = null;
         int start = 0;
         for (int t = 0; t <= files.length; t++) {
-            byte[] png = t < files.length ? (t == 0 ? first : read(files[t])) : null;
+            byte[] png = t < files.length ? (t == 0 ? first : Bridge.readFile(files[t])) : null;
             if (png != null) {
                 int[] s = Png.size(png);
                 if (s == null) throw new Exception("No es un PNG válido: " + files[t].getName());
                 if (s[0] != size[0] || s[1] != size[1]) throw new Exception("Todas las imágenes deben medir " + m.resolution + ": " + files[t].getName());
             }
             if (png != null && held != null && (Arrays.equals(png, held) || Arrays.equals(Png.decode(png), Png.decode(held)))) continue;
-            if (held != null && !blank(held)) m.frames.add(new FrameRef(TRACK, start, t - start, bridge.writeFrame(TRACK, start, held)));
+            if (held != null && !Png.blank(held)) m.frames.add(new FrameRef(TRACK, start, t - start, bridge.writeFrame(TRACK, start, held)));
             held = png;
             start = t;
         }
@@ -89,14 +89,4 @@ public class PngSequenceConverter extends Converter {
         return n.find() ? Long.parseLong(n.group(1).length() > 18 ? n.group(1).substring(0, 18) : n.group(1)) : -1;
     }
 
-    private static boolean blank(byte[] png) throws IOException {
-        for (int c : Png.decode(png)) if (c >>> 24 != 0) return false;
-        return true;
-    }
-
-    private static byte[] read(File f) throws IOException {
-        try (InputStream in = new FileInputStream(f)) {
-            return Bridge.readAll(in);
-        }
-    }
 }

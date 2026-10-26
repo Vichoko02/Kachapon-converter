@@ -80,13 +80,13 @@ public class KritaConverter extends Converter {
             int start = 0;
             for (int t = 0; t <= m.duration; t++) {
                 File f = t < m.duration && exported != null ? exported.get(t) : null;
-                byte[] png = direct != null ? (t < m.duration ? direct[t] : null) : f == null ? null : read(f);
+                byte[] png = direct != null ? (t < m.duration ? direct[t] : null) : f == null ? null : Bridge.readFile(f);
                 if (png != null) {
                     int[] s = Png.size(png);
                     if (s == null || s[0] != m.width() || s[1] != m.height()) throw new Exception("Krita exportó una imagen inválida para la capa \"" + layer.name + "\".");
                 }
                 if (png != null && held != null && Arrays.equals(png, held)) continue; // mismo dibujo: se alarga el hold
-                if (held != null && !(Arrays.equals(held, knownBlank) || (blank(held) && (knownBlank = held) != null))) m.frames.add(new FrameRef(track, start, t - start, bridge.writeFrame(track, start, held)));
+                if (held != null && !(Arrays.equals(held, knownBlank) || (Png.blank(held) && (knownBlank = held) != null))) m.frames.add(new FrameRef(track, start, t - start, bridge.writeFrame(track, start, held)));
                 held = png;
                 start = t;
             }
@@ -543,17 +543,6 @@ public class KritaConverter extends Converter {
         }
         File windows = new File("C:\\Program Files\\Krita (x64)\\bin\\krita.exe");
         return windows.exists() ? windows.getPath() : "krita";
-    }
-
-    private static byte[] read(File f) throws IOException {
-        try (InputStream in = new FileInputStream(f)) {
-            return Bridge.readAll(in);
-        }
-    }
-
-    private static boolean blank(byte[] png) throws IOException {
-        for (int c : Png.decode(png)) if (c >>> 24 != 0) return false;
-        return true;
     }
 
     private static String trackName(String name) {

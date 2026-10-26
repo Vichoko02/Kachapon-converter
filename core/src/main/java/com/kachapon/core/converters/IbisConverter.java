@@ -42,8 +42,8 @@ public class IbisConverter extends SequenceZipConverter {
     }
 
     /**
-     * legacy = true escribe como ibisPaint 11.0.0: versión de formato 1100, NeedVersion 110000, RPNG de 41 bytes y solo modo de
-     * fusión normal (los demás se funden con lo de abajo). Una app más nueva lo abre igual; una más vieja que 14.1 también debería.
+     * legacy = true escribe como ibisPaint 11.0.0: versión de formato 1100, NeedVersion 110000, RPNG de 41 bytes y la cola de 14.0;
+     * conserva los modos de fusión igual que el normal. Una app más nueva lo abre igual; una más vieja que 14.1 también debería.
      */
     public IbisConverter(Bridge bridge, boolean keepAnimated, boolean legacy) {
         super(".ipv", "ibisPaint", bridge);
@@ -67,7 +67,7 @@ public class IbisConverter extends SequenceZipConverter {
      */
     @Override
     public void build(Manifest m, Bridge bridge, File output) throws Exception {
-        Planner planner = new Planner(m, bridge, mode -> !legacy && Blend.toIbis(mode) >= 0, keepAnimated);
+        Planner planner = new Planner(m, bridge, mode -> Blend.toIbis(mode) >= 0, keepAnimated);
         List<Planner.State> states;
         try {
             states = planner.states();

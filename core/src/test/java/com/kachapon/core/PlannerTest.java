@@ -194,4 +194,32 @@ class PlannerTest {
         assertEquals(3, planes.size(), "fondo, la capa animada aunque esté en una carpeta, y el marco");
         assertEquals("linea", planes.get(1).name);
     }
+
+    /** Decodificar por delante en varios hilos no cambia ni un píxel: mismas imágenes que en serie, y no quedan hilos vivos. */
+    @Test
+    void parallelDecodeGivesSamePixelsAsSerial() throws Exception {
+        String[] tracks = {"a", "b", "c", "d", "e"};
+        Manifest m = manifest(40, tracks);
+        for (int t = 0; t < 40; t += 2) {
+            for (int k = 0; k < tracks.length; k++) draw(m, tracks[k], t, 2, 0xFF000000 | (t * 6 + k * 40) * 4099);
+        }
+        m.layers.add(folder("g", "multiply", 200, false));
+        m.layers.add(layer("a", "normal", 255, true, null));
+        m.layers.add(layer("b", "overlay", 128, true, "g"));
+        m.layers.add(layer("c", "normal", 255, true, "g"));
+        m.layers.add(layer("d", "screen", 255, true, null));
+        m.layers.add(layer("e", "normal", 90, true, null));
+        Planner serial = new Planner(m, bridge, null, true).threads(0);
+        Planner parallel = new Planner(m, bridge, null, true).threads(4);
+        List<Planner.State> a = serial.states(), b = parallel.states();
+        assertEquals(a.size(), b.size());
+        for (int i = 0; i < a.size(); i++) {
+            org.junit.jupiter.api.Assertions.assertArrayEquals(serial.compose(a.get(i)), parallel.compose(b.get(i)), "tramo " + i);
+        }
+        long deadline = System.currentTimeMillis() + 5000;
+        while (System.currentTimeMillis() < deadline && Thread.getAllStackTraces().keySet().stream().anyMatch(t -> t.getName().equals("planner-decode"))) {
+            Thread.sleep(100);
+        }
+        assertTrue(Thread.getAllStackTraces().keySet().stream().noneMatch(t -> t.getName().equals("planner-decode")), "los hilos deben terminar solos");
+    }
 }

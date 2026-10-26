@@ -98,6 +98,7 @@ public class IbisConverter extends SequenceZipConverter {
             int[] blank = null;
             int stateNo = 0;
             for (Planner.State s : states) {
+                planner.ahead(s);
                 bridge.progress(stateNo++ / (double) states.size(), "ibisPaint: carpeta de frame " + stateNo + " de " + states.size());
                 int n = Math.max(1, s.planes.size()), first = id, folderId = id + n;
                 for (int k = 0; k < n; k++) {

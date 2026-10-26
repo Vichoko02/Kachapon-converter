@@ -5,9 +5,15 @@ import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
@@ -31,8 +37,13 @@ public final class Planner {
         /** Capa que se queda como capa propia aunque sea normal (las animadas, si se pidió). */
         final boolean keep;
         private final Supplier<int[]> pixels;
+        /** El dibujo del puente si es una capa suelta; las capas fundidas llevan en parts las capas que las componen. */
+        final FrameRef frame;
+        final List<Plane> parts;
 
-        Plane(String key, String name, String blend, int opacity, boolean keep, Supplier<int[]> pixels) {
+        Plane(String key, String name, String blend, int opacity, boolean keep, Supplier<int[]> pixels, FrameRef frame, List<Plane> parts) {
+            this.frame = frame;
+            this.parts = parts;
             this.key = key;
             this.name = name;
             this.blend = blend;
@@ -70,6 +81,14 @@ public final class Planner {
     private final Map<String, List<Manifest.Layer>> kids = new HashMap<>();
     private final Map<String, FrameRef[]> timeline = new HashMap<>();
     private final Map<String, int[]> cache;
+    // Decodificación adelantada: solo el hilo que consume toca estos campos; los hilos de trabajo solo decodifican
+    private List<State> order;
+    private final Map<State, Integer> position = new IdentityHashMap<>();
+    private final Map<String, Future<int[]>> ahead = new HashMap<>();
+    private ThreadPoolExecutor pool;
+    private int threads = Math.max(1, Math.min(8, Runtime.getRuntime().availableProcessors() / 2));
+    private final int maxAhead;
+    private static final int WINDOW = 64; // tramos que se miran por delante
 
     /** supported dice si el destino tiene ese modo de fusión (null = los tiene todos). */
     public Planner(Manifest m, Bridge bridge, Predicate<String> supported) {
@@ -103,6 +122,14 @@ public final class Planner {
                 return size() > capacity;
             }
         };
+        // Cada imagen adelantada pesa w*h*4: se limita por hilos y por memoria
+        this.maxAhead = (int) Math.max(2, Math.min(2L * threads, budget / 2 / (4L * Math.max(1, w) * Math.max(1, h))));
+    }
+
+    /** Cuántos hilos decodifican por delante (0 = todo en el hilo que llama, como antes). Los píxeles salen igual. */
+    public Planner threads(int n) {
+        this.threads = Math.max(0, n);
+        return this;
     }
 
     /** Los tramos de la animación con las mismas capas, en orden. */
@@ -121,19 +148,56 @@ public final class Planner {
             }
             last = sig.toString();
         }
+        order = out;
+        position.clear();
+        for (int i = 0; i < out.size(); i++) position.put(out.get(i), i);
         return out;
     }
 
     /** La imagen del estado con todas sus capas combinadas. */
     public int[] compose(State s) {
+        ahead(s);
         return compose(s.planes);
+    }
+
+    /**
+     * Avisa de que se va a trabajar con este tramo: los dibujos de él y de los siguientes empiezan a decodificarse en otros hilos.
+     * Solo adelanta trabajo; el resultado no cambia.
+     */
+    public void ahead(State s) {
+        Integer at = position.get(s);
+        if (threads == 0 || at == null) return;
+        ahead.keySet().removeIf(cache::containsKey); // lo que ya está en la caché no hace falta
+        for (int i = at; i < Math.min(order.size(), at + WINDOW) && ahead.size() < maxAhead; i++) schedule(order.get(i).planes);
+    }
+
+    private void schedule(List<Plane> planes) {
+        for (Plane p : planes) {
+            if (ahead.size() >= maxAhead) return;
+            if (cache.containsKey(p.key) || ahead.containsKey(p.key)) continue;
+            if (p.parts != null) {
+                schedule(p.parts);
+            } else if (p.frame != null) {
+                if (pool == null) {
+                    pool = new ThreadPoolExecutor(threads, threads, 1, TimeUnit.SECONDS, new LinkedBlockingQueue<>(), r -> {
+                        Thread t = new Thread(r, "planner-decode");
+                        t.setDaemon(true);
+                        return t;
+                    });
+                    pool.allowCoreThreadTimeOut(true); // sin trabajo, los hilos terminan solos
+                }
+                FrameRef fr = p.frame;
+                ahead.put(p.key, pool.submit(() -> decode(fr)));
+            }
+        }
     }
 
     /** Píxeles de una capa del resultado (no se deben modificar). */
     public int[] pixels(Plane p) {
         int[] px = cache.get(p.key);
         if (px == null) {
-            px = p.pixels.get();
+            Future<int[]> f = ahead.remove(p.key);
+            px = f == null ? p.pixels.get() : await(f);
             cache.put(p.key, px);
         }
         return px;
@@ -161,13 +225,13 @@ public final class Planner {
                     out.addAll(sub);
                 } else {
                     List<Plane> inside = sub;
-                    out.add(new Plane(group("G", inside), l.name, l.passthrough ? "normal" : blend, l.opacity, false, () -> compose(inside)));
+                    out.add(new Plane(group("G", inside), l.name, l.passthrough ? "normal" : blend, l.opacity, false, () -> compose(inside), null, inside));
                 }
                 continue;
             }
             FrameRef fr = timeline.get(l.track) == null ? null : timeline.get(l.track)[t];
             if (fr == null) continue;
-            out.add(new Plane("L:" + fr.path, l.name, blend, l.opacity, animated.contains(l.track), () -> decode(fr)));
+            out.add(new Plane("L:" + fr.path, l.name, blend, l.opacity, animated.contains(l.track), () -> decode(fr), fr, null));
         }
         return out;
     }
@@ -198,7 +262,7 @@ public final class Planner {
             } else if (p.keep) {
                 // Sin nada debajo, cualquier modo da lo mismo que normal: la capa de abajo es transparente
                 flush(run, out);
-                out.add(nothingBelow && !p.normal() ? new Plane(p.key, p.name, "normal", p.opacity, true, p.pixels) : p);
+                out.add(nothingBelow && !p.normal() ? new Plane(p.key, p.name, "normal", p.opacity, true, p.pixels, p.frame, p.parts) : p);
             } else if (p.normal() || nothingBelow) {
                 run.add(p);
             } else {
@@ -221,7 +285,21 @@ public final class Planner {
     private Plane merge(List<Plane> planes) {
         List<Plane> copy = new ArrayList<>(planes);
         String name = copy.size() == 1 ? copy.get(0).name : "fusión";
-        return new Plane(group("M", copy), name, "normal", 255, false, () -> compose(copy));
+        return new Plane(group("M", copy), name, "normal", 255, false, () -> compose(copy), null, copy);
+    }
+
+    private static int[] await(Future<int[]> f) {
+        try {
+            return f.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new UncheckedIOException(new IOException("Conversión interrumpida", e));
+        } catch (ExecutionException e) {
+            Throwable c = e.getCause();
+            if (c instanceof RuntimeException) throw (RuntimeException) c;
+            if (c instanceof Error) throw (Error) c;
+            throw new UncheckedIOException(new IOException(c));
+        }
     }
 
     private int[] decode(FrameRef fr) {

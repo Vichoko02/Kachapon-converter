@@ -36,7 +36,7 @@ Una sola exportación ya usa en promedio **7,1 núcleos** (79,5 s de CPU en 11,2
 | # | Cambio | Ganancia medida | Esfuerzo | ¿Cambia el resultado? | Evidencia |
 |---|---|---|---|---|---|
 | 1 | **Miniatura sin combinar toda la animación.** En `ClipConverter.build` (línea 46) y `KritaConverter.build` (línea 279), en lugar de `flatten(m, bridge)`, usar `Planner.compose(planner.states().get(0))` y un `Png.encode`. | **−106 s en .clip** (302 → ≈196 s) y **−106 s en .kra** (163 → ≈57 s). Solo la miniatura: 1,4 s; los 86 tramos: 107,9 s. | 2 líneas en cada archivo | **No**: la miniatura ya era el primer tramo de `flatten`. Si no hay capas, se mantiene el PNG vacío. | Arnés `Preview` sobre el puente; JFR: `flatten` = 46 % y 73 %. |
-| 2 | **Leer sin Krita las capas sin máscaras activas** (ni propias ni en sus carpetas): decodificar las teselas LZF de 64x64 del `.kra` (`VERSION 2`, BGRA en planos, el primer byte dice si va comprimida). | **27 de 56 capas** de escena 1 sin abrir Krita: ≈27 × 5,7 s ≈ **−154 s**. El prototipo en Python tarda 0,03–0,7 s por capa; en Java sería menos (sin confirmar). | Medio: un lector de teselas y de `keyframes.xml` | **No** en lo medido: `Layer16` (634 píxeles visibles) y `Capa de pintura 30` (3.291) dan **0 píxeles distintos** frente a la exportación aislada de Krita. | `perf/kranative.py` contra `krita --export`. En escena 1 esas 27 capas tienen **un solo keyframe**; los holds de una capa con varios keyframes leída así están **sin confirmar** (habría que probarlo con `kritaKeepsLayers`). |
+| 2 | **Leer sin Krita las capas sin máscaras activas** (ni propias ni en sus carpetas): decodificar las teselas LZF de 64x64 del `.kra` (`VERSION 2`, BGRA en planos, el primer byte dice si va comprimida). | **27 de 56 capas** de escena 1 sin abrir Krita: ≈27 × 5,7 s ≈ **−154 s**. El prototipo en Python tarda 0,03–0,7 s por capa; en Java sería menos (sin confirmar). | Medio: un lector de teselas y de `keyframes.xml` | **No** en lo medido: `Layer16` (634 píxeles visibles) y `Capa de pintura 30` (3.291) dan **0 píxeles distintos** frente a la exportación aislada de Krita. | `perf/kranative.py` contra `krita --export`. En escena 1 esas 27 capas tienen **un solo keyframe**. **Varios keyframes, confirmado (25-oct):** `color base` del .kra generado desde escena 1 (73 keyframes, con holds) da **0 píxeles distintos en los 123 frames**. Lo probé en dos versiones: la que guardó Krita (teselas LZF por planos) y la nuestra sin comprimir (`kraseq.py` contra `--export-sequence`). |
 | 3 | **Copia reducida para Krita:** en lugar de copiar el .kra entero con una capa visible, copiar solo la capa, sus carpetas y sus máscaras, **sin `reference_images/` (33 MB que se cargan siempre), sin `mergedimage.png` y sin los archivos de las otras capas**. | La copia pasa de 67 MB a ≈1 MB. Krita baja de **13,3 a 10,5 s** con secuencia (−21 %) y de **5,7 a 3,4 s** con un frame. Java deja de copiar 63 MB (≈2 s por capa). En total ≈ 29 × 2,8 + 56 × 2 ≈ **−190 s**. | Bajo: cambiar `isolate` y `writeCopy` (quitar nodos y entradas) | **No**: los 123 frames son **idénticos byte a byte** y la imagen suelta también. | `perf/strip.py`, `cmp` de seq2 contra seq3. |
 | 4 | **Saber si un dibujo está vacío sin decodificarlo entero:** guardar los bytes del primer PNG vacío de Krita y comparar con `Arrays.equals`. Para los demás, decodificar y cortar al encontrar el primer píxel con alfa. | Hasta **−33 s** (1.618 × 20 ms). | Bajo | No | Medido el costo de `Png.decode` (20,3 ms por dibujo); el ahorro exacto está **sin confirmar**. |
 | 5 | **`rpng` con `int[]` en lugar de `ArrayList<Integer>`** (`runs`, `visible`). | ≈ **−13 s** en .ipv (el 13,6 % de 95 s es boxing y crecimiento de listas). | Bajo | No: los mismos números, en un arreglo. | JFR del .ipv. Estimado a partir del perfil, no implementado. |
@@ -79,6 +79,57 @@ Una sola exportación ya usa en promedio **7,1 núcleos** (79,5 s de CPU en 11,2
 9. **Rutas fijas:** `KritaConverter.kritaExecutable` usa `C:\Program Files\Krita (x64)` (está bien como respaldo de `KRITA_PATH`). Android fija `temp_seq` (ver el riesgo 5).
 10. **Atajos:** todos llevan su comentario `shortcut:` con el límite (`Composite`, `ClipConverter` ×3, `ClipWriter`, `IbisConverter` ×3, `Png`, `Sqlite`, `SqliteWriter`). No encontré atajos sin documentar.
 11. **Errores ignorados:** los tres `catch` que ignoran (`Orchestrator`:52 al limpiar la carpeta temporal, `KritaConverter`:398 al vaciar la salida de Krita, `MainActivity`:170 al borrar un documento vacío) tienen su motivo escrito y no pierden datos.
+
+## Verificación de lo implementado (commits `c2903a5` y `4178a81`)
+
+**Método:**
+- **Versiones:** compilé la versión de antes (`4a3d309`) y la actual (`4178a81`) fuera del repo.
+- **Escritores:** los cuatro escribieron desde **el mismo puente** de escena 1, y las dos salidas se releyeron con el mismo lector.
+- **Lectura del .kra:** `escena 1.kra` se leyó con las dos versiones, una después de la otra.
+- **Comparador** (`Kc compare`): pistas, árbol de capas y carpetas (nombre, ruta, visibilidad, opacidad, modo de fusión, paso), cada dibujo con su frame y su hold, y los píxeles. Ignora el RGB de los píxeles totalmente transparentes.
+- **Prueba negativa:** se cambia un dibujo del puente y el comparador tiene que decir DIFIERE. Lo dijo.
+
+| Camino | Antes | Ahora | Contenido |
+|---|---|---|---|
+| puente → .ipv | 73 s | 67 s | **Idéntico** (86 imágenes por frame releídas) |
+| puente → .ipv legacy | 74 s | 69 s | **Idéntico** |
+| puente → .clip | 224 s | 128 s | **Idéntico** (56 pistas, 68 capas y carpetas, 1.618 dibujos) |
+| puente → .kra | 119 s | 37 s | **Idéntico** (56 pistas, 68 capas y carpetas, 1.618 dibujos) |
+| `escena 1.kra` → puente | 671 s | 387–400 s | Misma estructura (56 pistas, 68 capas y carpetas, 1.618 dibujos con los mismos frames y holds). Píxeles: 16 dibujos difieren (1.940 píxeles en total) **por el propio Krita** (ver abajo). |
+| Contra los 123 frames de Krita | 0,26 % (981.455 píxeles > 3) | 0,26 % (981.775) | Igual. La diferencia es de 320 píxeles en 376 millones. |
+
+**Krita no es determinista en las capas con máscaras de transformación animadas.** Esto se comprobó de tres formas:
+- Dos lecturas de escena 1 con **la misma versión nueva** difieren en 6 dibujos, en las mismas capas y frames que entre la versión vieja y la nueva (`color base_2` en los frames 49–54, `Capa de pintura 56` en el 54).
+- Dos `--export-sequence` de **la misma copia completa** de `color base` (2ª) difieren en el frame 67 (64 píxeles).
+- La copia reducida contra la completa no agrega diferencias propias (0 píxeles distintos en la corrida b).
+
+Por eso **no se puede pedir que .kra → puente sea idéntico byte a byte entre corridas** mientras esas capas pasen por Krita. Las diferencias aparecen y desaparecen de una corrida a otra, en los mismos lugares. La lectura directa de teselas (#2) sí es determinista, pero solo sirve para las capas sin máscaras.
+
+### Lectura directa de teselas (`KraTiles`, 25-oct, sin commit al verificar)
+
+Hice dos extracciones de escena 1 con la lectura directa y las comparé capa por capa (`ByLayer`) contra las dos extracciones anteriores de `4178a81`, y entre sí.
+
+| Comparación | Pistas directas (28) | Pistas por Krita (28) |
+|---|---|---|
+| directa #1 contra `4178a81` #1 y #2 | **28 idénticas** | 2–3 difieren |
+| directa #2 contra directa #1, `4178a81` #1 y #2 | **28 idénticas** | 3 difieren |
+| `4178a81` #1 contra `4178a81` #2 (la misma versión dos veces) | 28 idénticas | 3 difieren |
+
+- Las que difieren por Krita son siempre las mismas capas con máscara de transformación animada: `color base_2`, `Capa de pintura 56`, `color 2`, `color_2`. La primera diferencia cae en frames distintos en cada corrida (16, 49, 50, 54, 75, 77, 80). Es el ruido conocido de Krita, no la lectura directa.
+- Son 28 pistas y no 27 porque dos capas `kira/Capa de pintura 31` tienen la misma ruta, y las dos salen iguales.
+- **Tiempo:** 345–353 s, contra 387–400 s (−45 s). Es menos que los ≈150 s estimados al principio, porque la copia reducida ya había bajado estas capas quietas de 5,7 a 3,4 s cada una.
+
+### Decodificación en paralelo (`db10361`), legacy con modos de fusión y vigilante de Krita (26-oct)
+
+| Cambio | Contra | Contenido | Tiempo | Pico de heap |
+|---|---|---|---|---|
+| Planner en paralelo (`db10361`) | `7858d61` | **Idéntico** en .ipv, .ipv legacy, .clip y .kra | .ipv 75 → 47 s; legacy 80 → 61 s; .clip 140 → 130 s; .kra 44 → 61 s (*) | 2.560 → 1.843 MB (.ipv); 928 → 977 MB (.clip) |
+| Legacy que conserva los modos de fusión (sin commit al verificar) | .ipv normal y legacy de `db10361` | **Idéntico**, y además el mismo archivo: 1.362 capas, 86 carpetas, todas en modo 0 | Normal 52 s, legacy 51–52 s en medición limpia | 1.843 MB |
+| Vigilante de Krita (sin commit al verificar) | Krita falso que se cuelga (`KRITA_PATH` → `.cmd` con un hijo `ping`) | — | Corta a los 183 s (60 + 123 frames), reintenta una vez y termina con "Krita se quedó colgado exportando la capa …, dos veces": 369 s en total | No quedan procesos vivos |
+
+(*) El .kra más lento y la diferencia entre normal y legacy de esa corrida coincidieron con los tests de Albañil corriendo en la misma máquina. En la medición limpia, normal y legacy tardan lo mismo. El .kra hay que volver a medirlo.
+
+**En escena 1, conservar los modos de fusión no cambia el archivo:** las capas con multiplicar u otro modo de fusión están dentro de carpetas que no se pueden separar sin cambiar la imagen, así que se componen enteras y llegan a ibisPaint en modo normal. El cambio solo se nota en escenas con capas con modo de fusión sueltas.
 
 ## Qué no medí
 

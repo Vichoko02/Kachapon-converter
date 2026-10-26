@@ -1,70 +1,37 @@
-# Arquitectura del Motor de Conversión Indie (Worker Headless)
+# Arquitectura del conversor
 
-Este documento define la infraestructura para convertir proyectos de animación entre **ibisPaint (`.ipv`)**, **Clip Studio Paint (`.clip`)** y **Krita (`.kra`)** preservando capas, estructura de carpetas (cels) y tiempos de exposición (X-Sheet / Timeline).
+Convierte animaciones entre **Krita (`.kra`)**, **Clip Studio Paint (`.clip`)**, **ibisPaint (`.ipv`)** y **secuencias PNG**, conservando capas, carpetas, modos de fusión, opacidad, visibilidad y tiempos de exposición (holds).
 
----
-
-## 1. Visión General del Sistema
-
-El sistema utiliza una **Arquitectura de Puente Universal Intermedio** dividida en tres etapas:
-
-1. **Ingesta y Extracción:** El archivo entrante se abre y sus frames de imagen se descomprimen al puente universal. Para `.kra` se lee el ZIP nativo con `maindoc.xml`. Para `.clip`/`.ipv` se lee el contenido puente ZIP si existe; de lo contrario se requiere la app nativa o hooks de memoria (Frida).
-
-2. **Puente Universal Intermedio (`temp_seq/`):** Estado neutro compuesto por:
-   - `manifest.json`: resolución, FPS, árbol de pistas y duración de cada fotograma (holds).
-   - `frames/`: secuencia de imágenes `.png` nombradas por `[pista]_[frame].png`.
-   - `timesheet.xdts`: hoja de tiempos estándar Toei/Celsys para sincronización.
-
-3. **Reconstrucción:** El motor destino toma el puente y empaqueta el archivo final en el formato elegido.
-
----
-
-## 2. Topología de Componentes
+## Flujo
 
 ```
-                        +---------------------------------------+
-                        |   Interfaz GUI (JavaFX Desktop)       |
-                        |   o App nativa (Android)              |
-                        +-------------------+-------------------+
-                                            |
-                                            v
-                        +---------------------------------------+
-                        |     Orquestador Central (Java)        |
-                        +-----+-------------+-------------+-----+
-                              |             |             |
-         +--------------------+             |             +--------------------+
-         |                                  |                                  |
-         v                                  v                                  v
-+-------+---------------+          +-------+---------------+          +-------+---------------+
-| MOTOR 1: KRITA (.kra) |          | MOTOR 2: CLIP (.clip) |          | MOTOR 3: IBIS (.ipv)  |
-| - ZIP nativo + XML    |          | - ZIP puente          |          | - ZIP puente          |
-| - maindoc.xml         |          | - manifest + frames   |          | - manifest + frames   |
-| - 100% Nativo Java    |          | - timesheet.xdts      |          | - timesheet.xdts      |
-+-------+---------------+          +-----------------------+          +-----------------------+
-         |                                  |                                  |
-         +--------------------+             |             +--------------------+
-                              |             |             |
-                              v             v             v
-                        +---------------------------------------+
-                        |       PUENTE UNIVERSAL TEMPORAL       |
-                        |  [PNG Sequence] + [manifest.json]     |
-                        |  + [timesheet.xdts]                   |
-                        +---------------------------------------+
+origen ──extract──▶ puente ──build──▶ destino
 ```
 
----
+1. **`Orchestrator`** elige el conversor de origen y el de destino según la extensión, crea un puente propio en la carpeta temporal (uno por conversión, para poder hacer varias a la vez), llama a `extract` y después a `build`, informa el avance y los avisos (`ConversionResult.warnings`), y al terminar borra el puente. El destino se escribe primero en un `.tmp` y solo al final reemplaza al archivo existente.
+2. **El puente** (`Bridge` + `Manifest`) es el estado neutro:
+   - `manifest.json`: resolución, fps, duración, pistas (cada una es una capa con su línea de tiempo), el árbol de capas y carpetas (modo de fusión, opacidad, visibilidad, paso) y cada dibujo con su frame y su hold;
+   - `frames/`: un PNG RGBA por dibujo (`pista_0001.png`);
+   - `timesheet.xdts`: hoja de tiempos.
+3. **Combinar capas** cuando el destino lo necesita: `Planner` resuelve qué se ve en cada tramo de la animación (abre las carpetas que se pueden separar y funde las que no) y `Composite` aplica los modos de fusión. `Blend` traduce los nombres de modos entre Krita, Clip Studio e ibisPaint.
 
-## 3. Módulos del proyecto (Gradle)
+Ningún formato conoce a otro: agregar uno es escribir un `Converter` con `extract` y `build`.
+
+## Conversores (`core/.../converters`)
+
+| Formato | Leer | Escribir |
+|---|---|---|
+| `.kra` (`KritaConverter`) | Las capas sin máscaras se leen de los bloques LZF del ZIP (`KraTiles`). Las demás, con Krita por detrás: una copia reducida del documento con solo esa capa visible y `--export-sequence`, vigilada con un límite de tiempo. | Documento Krita nativo: una capa de pintura animada por pista, dentro de su árbol de carpetas. |
+| `.clip` (`ClipConverter`, `ClipWriter`) | El archivo `CSFCHUNK`: la base SQLite (`Sqlite`) con capas, carpetas y línea de tiempo, y los bloques de píxeles. | A partir de la plantilla `clip_template.clip`: las capas con varios dibujos pasan a ser carpetas de animación (un cel por dibujo) y las quietas, capas normales (`SqliteWriter`, `Binc` para las curvas de tiempo). |
+| `.ipv` (`IbisConverter`) | La lista de chunks de ibisPaint: cada carpeta de frame es un dibujo, con su duración. | Siempre en el formato de ibisPaint 11 (`docs/IBIS_VERSIONES.md`): una carpeta de frame por tramo, con las capas que el `Planner` deja separadas. |
+| Secuencia PNG (`PngSequenceConverter`) | Una carpeta de PNG en orden. | Una carpeta `nombre_Nfps/` con un PNG por frame. |
+
+## Módulos (Gradle)
 
 | Módulo | Tecnología | Propósito |
-|--------|-----------|-----------|
-| `core` | Java 11 (Gson) | Lógica compartida: Bridge, Manifest, Converters, Orchestrator. Compilable en Desktop y Android. |
-| `desktop` | JavaFX 21 | Ventana gráfica Windows con drag-and-drop, autodetección y carpeta de salida. |
-| `android` | Android SDK (minSdk 24) | App móvil con Storage Access Framework y conversión en hilo worker. |
+|---|---|---|
+| `core` | Java 11 + Gson | Todo lo anterior. Compila igual para Desktop y Android. |
+| `desktop` | JavaFX 21 | Ventana con arrastrar y soltar, varias conversiones a la vez con su barra de avance y sus avisos. |
+| `android` | Android SDK (minSdk 24) | App con Storage Access Framework; convierte en un hilo aparte. |
 
----
-
-## 4. Formatos soportados
-
-- **Entrada / Salida:** `.kra`, `.clip`, `.ipv`
-- **Restricción:** origen y destino no pueden ser iguales.
+Más detalle: `docs/RENDIMIENTO.md` (mediciones y verificación) y `docs/IBIS_VERSIONES.md` (formato `.ipv`).

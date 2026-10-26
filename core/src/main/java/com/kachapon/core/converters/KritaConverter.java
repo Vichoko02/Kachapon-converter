@@ -59,23 +59,28 @@ public class KritaConverter extends Converter {
         for (int u = 0; u < leaves.size(); u++) {
             Element leaf = leaves.get(u);
             Manifest.Layer layer = m.layers.get(indexOf(m, leaf.getAttribute("kachapon-id")));
-            // Una copia reducida del documento: solo esta capa, sus carpetas y sus máscaras (Krita carga mucho menos y se copia mucho menos)
-            Document slim = (Document) doc.cloneNode(true);
-            List<Element> slimLayers = elements(child(first(slim.getDocumentElement(), "IMAGE"), "layers"), "layer");
-            Set<String> files = isolate(slimLayers, slimLayers.get(all.indexOf(leaf)));
-            writeCopy(inputPath, xml(slim, DOCTYPE_PUBLIC, DOCTYPE_SYSTEM), copy, files);
-            // Una capa quieta, sin movimientos de máscaras por encima, es una sola imagen: no hace falta exportar la animación
-            boolean still = !"1".equals(leaf.getAttribute("intimeline")) && !moves(leaf);
+            // Lo habitual: los píxeles se leen directo del .kra, sin pasar por Krita
+            byte[][] direct = directFrames(inputPath, image, leaf, from, m);
             File dir = new File(bridge.dir, "krita_export_" + u);
-            TreeMap<Integer, File> exported = export(copy, dir, m.duration, !still);
+            TreeMap<Integer, File> exported = null;
+            if (direct == null) {
+                // Una copia reducida del documento: solo esta capa, sus carpetas y sus máscaras (Krita carga mucho menos y se copia mucho menos)
+                Document slim = (Document) doc.cloneNode(true);
+                List<Element> slimLayers = elements(child(first(slim.getDocumentElement(), "IMAGE"), "layers"), "layer");
+                Set<String> files = isolate(slimLayers, slimLayers.get(all.indexOf(leaf)));
+                writeCopy(inputPath, xml(slim, DOCTYPE_PUBLIC, DOCTYPE_SYSTEM), copy, files);
+                // Una capa quieta, sin movimientos de máscaras por encima, es una sola imagen: no hace falta exportar la animación
+                boolean still = !"1".equals(leaf.getAttribute("intimeline")) && !moves(leaf);
+                exported = export(copy, dir, m.duration, !still);
+            }
 
             String track = Bridge.addTrack(m, layer.name);
             layer.track = track;
             byte[] held = null;
             int start = 0;
             for (int t = 0; t <= m.duration; t++) {
-                File f = t < m.duration ? exported.get(t) : null;
-                byte[] png = f == null ? null : read(f);
+                File f = t < m.duration && exported != null ? exported.get(t) : null;
+                byte[] png = direct != null ? (t < m.duration ? direct[t] : null) : f == null ? null : read(f);
                 if (png != null) {
                     int[] s = Png.size(png);
                     if (s == null || s[0] != m.width() || s[1] != m.height()) throw new Exception("Krita exportó una imagen inválida para la capa \"" + layer.name + "\".");
@@ -85,8 +90,10 @@ public class KritaConverter extends Converter {
                 held = png;
                 start = t;
             }
-            for (File f : new HashSet<>(exported.values())) f.delete();
-            dir.delete();
+            if (exported != null) {
+                for (File f : new HashSet<>(exported.values())) f.delete();
+                dir.delete();
+            }
             bridge.progress((u + 1) / (double) leaves.size(), "Krita: capa " + (u + 1) + " de " + leaves.size() + " (" + layer.name + ")");
             System.err.println("Krita: capa " + (u + 1) + "/" + leaves.size() + " \"" + layer.name + "\"");
         }
@@ -102,6 +109,79 @@ public class KritaConverter extends Converter {
         m.tracks.removeIf(t -> !used.contains(t));
         if (m.tracks.isEmpty()) throw new Exception("El .kra no tiene nada dibujado.");
         return m;
+    }
+
+    /**
+     * Los dibujos de una capa leídos directo de los bloques del .kra, uno por frame (null = vacío), o null si hay que pasar por Krita:
+     * solo se lee directo una capa RGBA de 8 bits sin máscaras (ni en sus carpetas), sin "heredar alfa", sin canales bloqueados,
+     * con píxel por defecto transparente y con un keyframe que ya vale al empezar el rango. Cualquier duda o error va por Krita.
+     */
+    private static byte[][] directFrames(String inputPath, Element image, Element leaf, int from, Manifest m) {
+        try {
+            if (!"RGBA".equals(leaf.getAttribute("colorspacename")) || !"RGBA".equals(image.getAttribute("colorspacename"))) return null;
+            if ("1".equals(leaf.getAttribute("inheritalpha")) || !leaf.getAttribute("channelflags").isEmpty()) return null;
+            for (Node n = leaf; n instanceof Element; n = n.getParentNode()) {
+                Element e = (Element) n;
+                for (Element mask : children(e, "mask")) if (!"0".equals(mask.getAttribute("visible"))) return null;
+                Element masks = child(e, "masks");
+                if (masks != null) for (Element mask : children(masks, "mask")) if (!"0".equals(mask.getAttribute("visible"))) return null;
+            }
+            String dir = image.getAttribute("name") + "/layers/", file = leaf.getAttribute("filename");
+            int dx = intAttr(leaf, "x", 0), dy = intAttr(leaf, "y", 0);
+
+            // Keyframes: tiempo -> {archivo, desplazamiento}; una capa sin animación es un solo dibujo desde el principio
+            TreeMap<Integer, Object[]> key = new TreeMap<>();
+            try (ZipFile zf = new ZipFile(inputPath)) {
+                String xmlName = leaf.getAttribute("keyframes");
+                if (xmlName.isEmpty()) {
+                    key.put(from, new Object[]{file, 0, 0});
+                } else {
+                    ZipEntry ke = zf.getEntry(dir + xmlName);
+                    if (ke == null) return null;
+                    Document kd;
+                    try (InputStream is = zf.getInputStream(ke)) {
+                        kd = xmlBuilder().parse(is);
+                    }
+                    NodeList kfs = kd.getElementsByTagName("keyframe");
+                    for (int i = 0; i < kfs.getLength(); i++) {
+                        Element k = (Element) kfs.item(i);
+                        Element off = child(k, "offset");
+                        key.put(intAttr(k, "time", 0), new Object[]{k.getAttribute("frame"), off == null ? 0 : intAttr(off, "x", 0), off == null ? 0 : intAttr(off, "y", 0)});
+                    }
+                }
+                if (key.isEmpty() || key.firstKey() > from) return null;
+
+                Map<String, byte[]> png = new HashMap<>(); // un dibujo por keyframe; los frames del mismo keyframe comparten los mismos bytes
+                Set<String> done = new HashSet<>();
+                byte[][] out = new byte[m.duration][];
+                for (int t = 0; t < m.duration; t++) {
+                    Object[] k = key.floorEntry(from + t).getValue();
+                    String name = (String) k[0];
+                    if (!done.contains(name)) {
+                        done.add(name);
+                        ZipEntry dp = zf.getEntry(dir + name + ".defaultpixel");
+                        if (dp != null) {
+                            try (InputStream is = zf.getInputStream(dp)) {
+                                for (byte b : Bridge.readAll(is)) if (b != 0) return null;
+                            }
+                        }
+                        ZipEntry te = zf.getEntry(dir + name);
+                        if (te == null) return null;
+                        byte[] data;
+                        try (InputStream is = zf.getInputStream(te)) {
+                            data = Bridge.readAll(is);
+                        }
+                        int[] argb = KraTiles.decode(data, m.width(), m.height(), dx + (Integer) k[1], dy + (Integer) k[2]);
+                        if (argb != null) png.put(name, Png.encode(argb, m.width(), m.height()));
+                    }
+                    out[t] = png.get(name);
+                }
+                return out;
+            }
+        } catch (Exception | OutOfMemoryError e) {
+            System.err.println("Lectura directa de la capa \"" + leaf.getAttribute("name") + "\" no posible (" + e + "): se usa Krita.");
+            return null;
+        }
     }
 
     /**

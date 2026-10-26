@@ -1,1 +1,0 @@
-npx rea-agents setup

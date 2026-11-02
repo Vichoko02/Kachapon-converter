@@ -21,3 +21,5 @@ bin/**
 !bin/**/
 !bin/**/.gitkeep
 !bin/**/Dockerfile*
+graphify-out/
+KachaponConverter.zip

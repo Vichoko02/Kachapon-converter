@@ -268,8 +268,10 @@ public class KritaConverter extends Converter {
         for (Node c = n.getFirstChild(); c != null; c = c.getNextSibling()) collectFiles(c, out);
     }
 
-    /** Copia del .kra con otro maindoc.xml; mimetype va primero y sin comprimir, como lo exige Krita. */
-    /** files: nombres de archivo de las capas que se conservan; fuera quedan las demás, las imágenes de referencia y la imagen combinada. */
+    /**
+     * Copia del .kra con otro maindoc.xml; mimetype va primero y sin comprimir, como lo exige Krita.
+     * files: nombres de archivo de las capas que se conservan; fuera quedan las demás, las imágenes de referencia y la imagen combinada.
+     */
     private static void writeCopy(String input, byte[] maindoc, File out, Set<String> files) throws IOException {
         try (ZipFile zf = new ZipFile(input); ZipOutputStream zos = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(out)))) {
             zos.setLevel(Deflater.BEST_SPEED); // la copia solo vive lo que tarda Krita en exportarla
@@ -471,7 +473,6 @@ public class KritaConverter extends Converter {
         return out.toByteArray();
     }
 
-    /** Ejecuta Krita sin ventana para exportar; falla con un mensaje claro si no está instalado o no termina. */
     // Una sola exportación de Krita a la vez: varias conversiones pueden compartir el programa sin pisarse
     private static final java.util.concurrent.Semaphore KRITA = new java.util.concurrent.Semaphore(1);
 
@@ -497,6 +498,7 @@ public class KritaConverter extends Converter {
         }
     }
 
+    /** Ejecuta Krita sin ventana para exportar; falla con un mensaje claro si no está instalado o no termina. */
     private static int runKrita(int seconds, String... args) throws Exception {
         List<String> cmd = new ArrayList<>();
         cmd.add(kritaExecutable());
@@ -514,17 +516,19 @@ public class KritaConverter extends Converter {
                 // la salida de Krita solo se descarta para que no se bloquee
             }
         });
+        drain.setDaemon(true);
         drain.start();
         try {
             if (!p.waitFor(seconds, TimeUnit.SECONDS)) {
                 kill(p);
                 throw new KritaTimeout("Krita tardó más de " + seconds + " s");
             }
+            // Con límite: un hijo que sobreviva a Krita y herede su salida la dejaría abierta para siempre, con el semáforo tomado
+            drain.join(5000);
         } catch (InterruptedException e) {
             kill(p);
             throw e;
         }
-        drain.join();
         return p.exitValue();
     }
 
@@ -532,6 +536,11 @@ public class KritaConverter extends Converter {
     private static void kill(Process p) {
         p.descendants().forEach(ProcessHandle::destroyForcibly);
         p.destroyForcibly();
+        try {
+            p.waitFor(5, TimeUnit.SECONDS); // mientras siga vivo tiene abiertos los archivos del puente, y no se podrían borrar
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private static String kritaExecutable() {
@@ -543,11 +552,6 @@ public class KritaConverter extends Converter {
         }
         File windows = new File("C:\\Program Files\\Krita (x64)\\bin\\krita.exe");
         return windows.exists() ? windows.getPath() : "krita";
-    }
-
-    private static String trackName(String name) {
-        String clean = name == null ? "" : name.trim();
-        return clean.isEmpty() ? "krita" : clean;
     }
 
     /** Krita rechaza el documento ("no se puede analizar") si falta el DOCTYPE. */

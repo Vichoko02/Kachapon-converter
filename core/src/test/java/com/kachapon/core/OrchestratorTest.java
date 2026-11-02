@@ -113,6 +113,33 @@ class OrchestratorTest {
         assertEquals(0, left == null ? 0 : left.length);
     }
 
+    /** Cancelar a mitad: falla como cancelada, no deja el temporal, el destino anterior queda intacto y el hilo sigue sirviendo. */
+    @Test
+    void cancelStopsTheConversionAndKeepsTheOldFile() throws Exception {
+        File in = clip("c", 5, 0xFFFF0000), out = new File(tmp, "cancelada.kra");
+        byte[] old = "archivo anterior".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        java.nio.file.Files.write(out.toPath(), old);
+        Orchestrator o = new Orchestrator(new File(tmp, "bridge").getPath());
+        ConversionResult r = o.onProgress((fraction, stage) -> o.cancel()).run(in.getPath(), out.getPath());
+        assertTrue(!r.success);
+        assertTrue(o.isCancelled());
+        assertEquals("Conversión cancelada.", r.error);
+        org.junit.jupiter.api.Assertions.assertArrayEquals(old, java.nio.file.Files.readAllBytes(out.toPath()));
+        assertTrue(!new File(out.getPath() + ".tmp").exists());
+        assertTrue(!Thread.currentThread().isInterrupted(), "la siguiente conversión del mismo hilo no debe heredar el aviso");
+    }
+
+    /** Cancelar mientras espera en la cola: ni siquiera empieza. */
+    @Test
+    void cancelBeforeStartingDoesNothing() throws Exception {
+        File in = clip("d", 2, 0xFF00FF00), out = new File(tmp, "nunca.kra");
+        Orchestrator o = new Orchestrator(new File(tmp, "bridge2").getPath());
+        o.cancel();
+        ConversionResult r = o.run(in.getPath(), out.getPath());
+        assertTrue(!r.success);
+        assertTrue(!out.exists() && !new File(tmp, "bridge2").exists());
+    }
+
     /** Versión de formato que lleva el MetaInfo de un .ipv (1100: el formato de ibisPaint 11). */
     private static int ipvFormatVersion(File ipv) throws IOException {
         java.nio.ByteBuffer b = java.nio.ByteBuffer.wrap(java.nio.file.Files.readAllBytes(ipv.toPath()));

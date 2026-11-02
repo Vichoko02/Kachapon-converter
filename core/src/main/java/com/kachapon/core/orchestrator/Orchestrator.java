@@ -10,8 +10,12 @@ import java.util.UUID;
 
 /** origen -> puente (secuencia PNG + manifest.json + timesheet.xdts) -> destino. */
 public class Orchestrator {
+    private static final String CANCELLED = "Conversión cancelada.";
+
     private final Bridge bridge;
     private final boolean ownsBridge;
+    private boolean cancelled;
+    private Thread running;
 
     public Orchestrator(String bridgeDir) {
         this.bridge = new Bridge(bridgeDir);
@@ -33,14 +37,39 @@ public class Orchestrator {
         return this;
     }
 
+    /**
+     * Cancela la conversión, también si todavía está en cola, desde cualquier hilo. Si Krita está exportando se le mata en el acto;
+     * lo demás se corta al siguiente dibujo. No deja el archivo a medias y el destino que ya existía queda intacto.
+     */
+    public synchronized void cancel() {
+        cancelled = true;
+        bridge.cancel();
+        if (running != null) running.interrupt();
+    }
+
+    public synchronized boolean isCancelled() {
+        return cancelled;
+    }
+
+    private synchronized boolean started() {
+        running = Thread.currentThread();
+        return !cancelled;
+    }
+
+    private synchronized void ended() {
+        running = null;
+        if (cancelled) Thread.interrupted(); // el hilo puede ser de un pool: la siguiente conversión no debe heredar el aviso
+    }
+
     /** Origen: un archivo o una carpeta de PNG. Destino "nombre.png": carpeta "nombre_Nfps" con la secuencia. */
     public ConversionResult run(String inputPath, String outputPath) {
         java.util.Set<String> warnings = new java.util.LinkedHashSet<>();
         Bridge.collectWarnings(warnings);
         try {
-            ConversionResult r = convert(inputPath, outputPath);
+            ConversionResult r = started() ? convert(inputPath, outputPath) : fail(CANCELLED);
             return new ConversionResult(r.success, r.outputPath, r.error, new java.util.ArrayList<>(warnings));
         } finally {
+            ended();
             Bridge.collectWarnings(null);
             if (ownsBridge) {
                 try {
@@ -94,6 +123,7 @@ public class Orchestrator {
             return fail("No hay memoria suficiente para esta animación. Prueba con una más corta o de menor resolución, o aumenta la memoria de Java (-Xmx).");
         } catch (Exception e) {
             discard(tmp);
+            if (isCancelled()) return fail(CANCELLED);
             return fail(e.getMessage() != null ? e.getMessage() : e.toString());
         }
     }

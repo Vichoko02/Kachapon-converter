@@ -41,6 +41,7 @@ public class Bridge {
 
     private Progress listener = (fraction, stage) -> { };
     private double from = 0, to = 1;
+    private volatile boolean cancelled;
 
     public Bridge(String dir) {
         this.dir = new File(dir);
@@ -58,7 +59,17 @@ public class Bridge {
 
     /** Avance dentro de la fase actual (0..1). Los conversores lo llaman en sus bucles largos. */
     public void progress(double fraction, String stage) {
+        stopIfCancelled();
         listener.update(from + (to - from) * Math.max(0, Math.min(1, fraction)), stage);
+    }
+
+    /** Desde aquí, avisar el avance o leer o escribir un dibujo corta la conversión con CancellationException. */
+    public void cancel() {
+        cancelled = true;
+    }
+
+    private void stopIfCancelled() {
+        if (cancelled) throw new java.util.concurrent.CancellationException();
     }
 
     /** Borra la carpeta del puente entera (los PNG intermedios ocupan cientos de MB). */
@@ -74,12 +85,14 @@ public class Bridge {
 
     /** Guarda el PNG en el puente y devuelve su ruta relativa ("frames/pista_0001.png"). */
     public String writeFrame(String track, int frame, byte[] png) throws IOException {
+        stopIfCancelled();
         String path = "frames/" + frameName(track, frame);
         writeFile(new File(dir, path), png);
         return path;
     }
 
     public byte[] readFrame(FrameRef fr) throws IOException {
+        stopIfCancelled();
         return readFile(new File(dir, fr.path));
     }
 

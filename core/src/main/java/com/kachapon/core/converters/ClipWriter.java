@@ -7,7 +7,6 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.zip.Adler32;
-import java.util.zip.Deflater;
 import java.util.zip.DeflaterOutputStream;
 import java.util.zip.InflaterInputStream;
 
@@ -567,6 +566,7 @@ final class ClipWriter {
     // ---------- pixeles ----------
 
     private void offscreen(Sqlite.Table off, long layerId, int[] argb, int w, int h, long mainId) throws IOException {
+        if (Thread.currentThread().isInterrupted()) throw new java.io.InterruptedIOException(); // cancelaron: sin puente a mano, se mira aquí, una vez por imagen
         int gw = (w + BLOCK - 1) / BLOCK, gh = (h + BLOCK - 1) / BLOCK, n = gw * gh;
         ByteArrayOutputStream data = new ByteArrayOutputStream();
         int[] sizes = new int[n], sums = new int[n];
@@ -614,7 +614,7 @@ final class ClipWriter {
             return out.toByteArray();
         }
         ByteArrayOutputStream z = new ByteArrayOutputStream();
-        try (DeflaterOutputStream d = new DeflaterOutputStream(z, new Deflater())) {
+        try (DeflaterOutputStream d = new DeflaterOutputStream(z)) {
             d.write(raw);
         }
         byte[] zb = z.toByteArray();

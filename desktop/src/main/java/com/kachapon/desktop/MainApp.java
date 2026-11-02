@@ -301,7 +301,16 @@ public class MainApp extends Application {
         Label stage = new Label("En cola");
         stage.setFont(Font.font("Segoe UI", 11));
         stage.setTextFill(Color.web("#6b7280"));
-        VBox card = new VBox(6, name, bar, stage);
+        Orchestrator conversion = new Orchestrator();
+        Button cancel = new Button("Cancelar");
+        styleButton(cancel, false);
+        cancel.setPrefHeight(28);
+        cancel.setOnAction(e -> {
+            cancel.setDisable(true);
+            cancel.setText("Cancelando…");
+            conversion.cancel();
+        });
+        VBox card = new VBox(6, name, bar, stage, cancel);
         card.setPadding(new Insets(10, 12, 10, 12));
         card.setStyle("-fx-background-color: white; -fx-background-radius: 8; -fx-border-color: #e5e7eb; -fx-border-radius: 8;");
         jobsBox.getChildren().add(0, card);
@@ -310,7 +319,7 @@ public class MainApp extends Application {
             ConversionResult res = null;
             Throwable crash = null;
             try {
-                res = new Orchestrator()
+                res = conversion
                         .onProgress((fraction, what) -> javafx.application.Platform.runLater(() -> {
                             bar.setProgress(fraction);
                             stage.setText(Math.round(fraction * 100) + " %  ·  " + what);
@@ -323,7 +332,11 @@ public class MainApp extends Application {
             Throwable failure = crash;
             javafx.application.Platform.runLater(() -> {
                 activeOutputs.remove(key);
-                if (failure != null) {
+                card.getChildren().remove(cancel);
+                if (failure == null && !done.success && conversion.isCancelled()) {
+                    bar.setProgress(0);
+                    stage.setText(done.error);
+                } else if (failure != null) {
                     bar.setProgress(0);
                     stage.setText("Excepción: " + (failure.getMessage() != null ? failure.getMessage() : failure.toString()));
                     stage.setTextFill(Color.web("#dc2626"));

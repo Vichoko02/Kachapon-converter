@@ -98,6 +98,24 @@ public class Orchestrator {
         }
     }
 
+    /**
+     * Nombre del archivo convertido: el del origen más la conversión ("escena" de .ipv a .kra: "escena_IbisToKrita.kra"),
+     * para que convertir de vuelta no pise el original.
+     */
+    public static String outputName(String base, String srcExt, String dstExt) {
+        return base + "_" + label(srcExt) + "To" + label(dstExt) + dstExt;
+    }
+
+    private static String label(String ext) {
+        switch (ext.toLowerCase(Locale.ROOT)) {
+            case ".kra": return "Krita";
+            case ".clip": return "Clip";
+            case ".ipv": return "Ibis";
+            case ".png": return "PNG";
+            default: return ext.replace(".", "").toUpperCase(Locale.ROOT);
+        }
+    }
+
     public static Converter converterFor(String ext, Bridge bridge) {
         switch (ext) {
             case ".kra": return new KritaConverter(bridge);

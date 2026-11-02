@@ -122,6 +122,14 @@ class OrchestratorTest {
         throw new IOException("sin MetaInfo");
     }
 
+    /** El nombre lleva la conversión, así convertir de vuelta no pisa el original. */
+    @Test
+    void outputNameKeepsTheConversion() {
+        assertEquals("escena_IbisToKrita.kra", Orchestrator.outputName("escena", ".ipv", ".kra"));
+        assertEquals("escena_IbisToKrita_KritaToClip.clip", Orchestrator.outputName("escena_IbisToKrita", ".KRA", ".clip"));
+        assertEquals("anim_ClipToPNG.png", Orchestrator.outputName("anim", ".clip", ".png"));
+    }
+
     /** Toda conversión a .ipv sale en el formato de ibisPaint 11, también desde Android (que no elige nada). */
     @Test
     void ibisIsAlwaysLegacy() throws Exception {

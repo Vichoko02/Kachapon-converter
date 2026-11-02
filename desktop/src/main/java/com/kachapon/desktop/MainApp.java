@@ -248,7 +248,7 @@ public class MainApp extends Application {
         if (i > 0) base = base.substring(0, i);
         // Un PNG representa toda su carpeta: el nombre sale de la carpeta, sin el sufijo de fps
         if (getExt(in.getName()).equalsIgnoreCase(".png")) base = in.getParentFile().getName().replaceAll("_\\d+fps$", "");
-        return dir + File.separator + base + FORMATS[dstCombo.getSelectionModel().getSelectedIndex()][0];
+        return dir + File.separator + Orchestrator.outputName(base, getExt(in.getName()), FORMATS[dstCombo.getSelectionModel().getSelectedIndex()][0]);
     }
 
     private void markSingle(java.util.Map<String, CheckBox> map, String ext) {

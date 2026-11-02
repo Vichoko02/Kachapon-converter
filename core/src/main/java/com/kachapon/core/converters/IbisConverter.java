@@ -21,7 +21,6 @@ public class IbisConverter extends SequenceZipConverter {
     private static final int CANVAS = 0x1000100, IMAGE = 0x1000500, META = 0x1000600;
     private static final int LAYER = 0x3000402, FOLDER = 0x3000403, ANIMATION = 0x1000604;
     private static final int ROOT = -5;
-    private static final String TRACK = "ibisPaint";
 
     // Versión del formato que se escribe: la de ibisPaint 11.0.0, la primera con animación, para que más versiones de la app abran
     // el archivo (docs/IBIS_VERSIONES.md): lo que impide abrirlo en una app vieja son NeedVersionForPlay/Edit, no el resto.
@@ -29,17 +28,8 @@ public class IbisConverter extends SequenceZipConverter {
     private static final int NEED_VERSION = 110000; // NeedVersionForPlay y NeedVersionForEdit: app x 10000
     private static final int TAIL_NEED_PLAY = 60, TAIL_NEED_EDIT = 64, TAIL_FORMAT_VERSION = 606; // las tres versiones de la cola
 
-    private final boolean keepAnimated;
-
-    /** Cada capa animada queda como capa propia en cada frame (más pesado que fundirlas, pero se pueden editar por separado). */
     public IbisConverter(Bridge bridge) {
-        this(bridge, true);
-    }
-
-    /** keepAnimated = false funde también las capas animadas: un .ipv mucho más ligero, con una sola capa por frame. */
-    public IbisConverter(Bridge bridge, boolean keepAnimated) {
         super(".ipv", "ibisPaint", bridge);
-        this.keepAnimated = keepAnimated;
     }
 
     @Override
@@ -51,21 +41,20 @@ public class IbisConverter extends SequenceZipConverter {
     }
 
     /**
-     * Escribe un .ipv nativo que ibisPaint importa: lienzo, una sesión de edición vacía (no hace falta historial),
-     * una carpeta de frame por tramo de la animación con sus capas (ver Planner: las carpetas se resuelven, las capas
-     * normales seguidas se funden y solo quedan aparte las que tienen modo de fusión), la imagen combinada para la
-     * miniatura y el MetaInfo. Cada capa conserva su modo y su opacidad; las ocultas no se escriben.
+     * Escribe un .ipv nativo que ibisPaint importa: lienzo, una sesión de edición vacía (no hace falta historial), una
+     * carpeta de frame por tramo de la animación con el árbol del documento (capas, carpetas, ocultas, modos y opacidad),
+     * la imagen combinada para la miniatura y el MetaInfo. Una capa sin dibujo en un tramo no se escribe en ese tramo.
+     * Nada se funde, así que una escena grande pesa mucho: ibisPaint repite cada capa en cada frame.
      */
     @Override
     public void build(Manifest m, Bridge bridge, File output) throws Exception {
-        Planner planner = new Planner(m, bridge, mode -> Blend.toIbis(mode) >= 0, keepAnimated);
-        List<Planner.State> states;
-        try {
-            states = planner.states();
-        } catch (UncheckedIOException e) {
-            throw e.getCause();
+        if (m.duration <= 0) throw new Exception("La animación no tiene frames.");
+        TreeSet<Integer> cuts = new TreeSet<>(Collections.singleton(0));
+        for (FrameRef f : m.frames) {
+            if (f.frame > 0 && f.frame < m.duration) cuts.add(f.frame);
+            if (f.frame + f.hold < m.duration) cuts.add(f.frame + f.hold);
         }
-        if (states.isEmpty()) throw new Exception("La animación no tiene frames.");
+        Planner planner = new Planner(m, bridge, null);
         int w = m.width(), h = m.height();
         double now = System.currentTimeMillis() / 1000.0;
         String art = artId();
@@ -85,42 +74,19 @@ public class IbisConverter extends SequenceZipConverter {
 
             ByteArrayOutputStream layers = new ByteArrayOutputStream();
             DataOutputStream l = new DataOutputStream(layers);
-            int id = 2, lastFolder = 0, count = 1;
-            int[] blank = null;
-            int stateNo = 0;
-            for (Planner.State s : states) {
-                planner.ahead(s);
-                bridge.progress(stateNo++ / (double) states.size(), "ibisPaint: carpeta de frame " + stateNo + " de " + states.size());
-                int n = Math.max(1, s.planes.size()), first = id, folderId = id + n;
-                for (int k = 0; k < n; k++) {
-                    int layerId = first + k;
-                    int[] px;
-                    int blend = 0;
-                    float alpha = 1f;
-                    String name = "";
-                    if (s.planes.isEmpty()) { // hueco: una capa transparente para que el frame exista
-                        if (blank == null) blank = new int[w * h];
-                        px = blank;
-                    } else {
-                        Planner.Plane p = s.planes.get(k);
-                        px = planner.pixels(p);
-                        blend = Blend.toIbis(p.blend);
-                        alpha = p.opacity / 255f;
-                        name = p.name;
-                    }
-                    imageChunk(out, now, layerId, 1, 4, rpng(px, w, h));
-                    layerSub(l, false, layerId, alpha, blend, name, folderId, 0, Integer.MIN_VALUE, -1);
-                }
-                // Primero las capas y después su carpeta de frame, como guarda ibisPaint; la capa actual es la de más arriba
-                layerSub(l, true, folderId, 1f, 0, "", ROOT, 0x200, first + n - 1, s.hold);
-                id = folderId + 1;
-                lastFolder = folderId;
-                count += n + 1;
+            Tree tree = new Tree(m, bridge, out, l, now);
+            int lastFolder = 0, stateNo = 0;
+            for (int start : cuts) {
+                Integer next = cuts.higher(start);
+                int hold = (next == null ? m.duration : next) - start;
+                bridge.progress(stateNo++ / (double) cuts.size(), "ibisPaint: carpeta de frame " + stateNo + " de " + cuts.size());
+                lastFolder = tree.frame(start, hold);
             }
+            int count = tree.count;
             // Capa especial -1 (sin padre, 50 %) con imagen vacía, y el lienzo combinado en PNG normal para la miniatura
             imageChunk(out, now, -1, 1, 4, new byte[0]);
-            imageChunk(out, now, -1, 0, 0, Png.encode(planner.compose(states.get(0)), w, h));
-            layerSub(l, false, -1, 0.5f, 0, "", Integer.MIN_VALUE, 0, Integer.MIN_VALUE, -1);
+            imageChunk(out, now, -1, 0, 0, Png.encode(rotated(composeFirst(planner, w, h)), w, h));
+            layerSub(l, false, true, -1, 0.5f, 0, "", Integer.MIN_VALUE, 0, Integer.MIN_VALUE, -1);
 
             c.writeInt(FORMAT_VERSION); str(c, art); str(c, title); str(c, ""); str(c, ""); c.writeInt(0); c.writeInt(0); str(c, ""); str(c, "");
             c.writeDouble(now); c.writeDouble(now); c.writeDouble(now); c.writeLong(0); str(c, ""); c.writeInt(w); c.writeInt(h);
@@ -133,6 +99,99 @@ public class IbisConverter extends SequenceZipConverter {
             t.putInt(TAIL_NEED_PLAY, NEED_VERSION).putInt(TAIL_NEED_EDIT, NEED_VERSION).putInt(TAIL_FORMAT_VERSION, FORMAT_VERSION);
             c.write(tail);
             chunk(out, META, b);
+        }
+    }
+
+    private static int[] composeFirst(Planner planner, int w, int h) {
+        List<Planner.State> states = planner.states();
+        return states.get(0).planes.isEmpty() ? new int[w * h] : planner.compose(states.get(0));
+    }
+
+    /** Escribe el árbol del documento dentro de cada carpeta de frame: hijos primero y después su carpeta, como guarda ibisPaint. */
+    private static final class Tree {
+        private final Manifest m;
+        private final Bridge bridge;
+        private final DataOutputStream images, records;
+        private final double now;
+        private final Map<String, List<Manifest.Layer>> kids = new HashMap<>();
+        private final Map<String, FrameRef[]> at = new HashMap<>();
+        private final Map<String, byte[]> rpngs = new HashMap<>(); // ya comprimido: el mismo dibujo se repite en muchos frames
+        private byte[] blank;
+        int count = 1, id = 2, top;
+
+        Tree(Manifest m, Bridge bridge, DataOutputStream images, DataOutputStream records, double now) {
+            this.m = m;
+            this.bridge = bridge;
+            this.images = images;
+            this.records = records;
+            this.now = now;
+            for (Manifest.Layer l : m.allLayers()) kids.computeIfAbsent(l.parent == null ? "" : l.parent, k -> new ArrayList<>()).add(l);
+            for (String t : m.tracks) at.put(t, new FrameRef[m.duration]);
+            for (FrameRef f : m.frames) {
+                FrameRef[] line = at.get(f.track);
+                if (line != null) for (int t = Math.max(0, f.frame); t < Math.min(m.duration, f.frame + f.hold); t++) line[t] = f;
+            }
+        }
+
+        /** Una carpeta de frame con lo que hay en el frame t; devuelve su id. */
+        int frame(int t, int hold) throws IOException {
+            int folderId = id++;
+            top = 0;
+            children("", folderId, t);
+            if (top == 0) { // hueco: una capa transparente para que el frame exista
+                if (blank == null) blank = rpng(new int[m.width() * m.height()], m.width(), m.height());
+                paint(blank, true, 1f, 0, "", folderId);
+            }
+            layerSub(records, true, true, folderId, 1f, 0, "", ROOT, 0x200, top, hold);
+            count++;
+            return folderId;
+        }
+
+        private void children(String parent, int parentId, int t) throws IOException {
+            for (Manifest.Layer l : kids.getOrDefault(parent, Collections.emptyList())) {
+                float alpha = l.opacity / 255f;
+                int mode = mode(l);
+                if (l.folder()) {
+                    if (!shows(l, t)) continue;
+                    if (l.passthrough) Bridge.warn("la carpeta \"" + l.name + "\" es de paso: ibisPaint no lo tiene y va como carpeta normal.");
+                    int folderId = id++;
+                    children(l.id, folderId, t);
+                    layerSub(records, true, l.visible, folderId, alpha, mode, l.name, parentId, 0, Integer.MIN_VALUE, -1);
+                    count++;
+                } else {
+                    FrameRef[] line = at.get(l.track);
+                    FrameRef f = line == null ? null : line[t];
+                    if (f == null) continue;
+                    byte[] data = rpngs.get(f.path);
+                    if (data == null) {
+                        data = rpng(rotated(Png.decode(bridge.readFrame(f))), m.width(), m.height());
+                        rpngs.put(f.path, data);
+                    }
+                    paint(data, l.visible, alpha, mode, l.name, parentId);
+                }
+            }
+        }
+
+        private void paint(byte[] data, boolean visible, float alpha, int mode, String name, int parentId) throws IOException {
+            int layerId = id++;
+            imageChunk(images, now, layerId, 1, 4, data);
+            layerSub(records, false, visible, layerId, alpha, mode, name == null ? "" : name, parentId, 0, Integer.MIN_VALUE, -1);
+            top = layerId; // la capa actual del frame es la última escrita, la de más arriba
+            count++;
+        }
+
+        private boolean shows(Manifest.Layer folder, int t) {
+            for (Manifest.Layer l : kids.getOrDefault(folder.id, Collections.emptyList())) {
+                if (l.folder() ? shows(l, t) : at.containsKey(l.track) && at.get(l.track)[t] != null) return true;
+            }
+            return false;
+        }
+
+        private static int mode(Manifest.Layer l) {
+            int mode = Blend.toIbis(l.blend == null ? "normal" : l.blend);
+            if (mode >= 0) return mode;
+            Bridge.warn("el modo de fusión \"" + l.blend + "\" no existe en ibisPaint; se usa normal.");
+            return 0;
         }
     }
 
@@ -208,11 +267,11 @@ public class IbisConverter extends SequenceZipConverter {
     }
 
     /** Capa o carpeta del MetaInfo; blend es el número de modo de fusión de ibisPaint (0 = normal) y alpha la opacidad (0..1). */
-    private static void layerSub(DataOutputStream out, boolean folder, int id, float alpha, int blend, String name, int parent,
+    private static void layerSub(DataOutputStream out, boolean folder, boolean visible, int id, float alpha, int blend, String name, int parent,
                                  int flag2, int frameCurrent, int duration) throws IOException {
         ByteArrayOutputStream b = new ByteArrayOutputStream();
         DataOutputStream c = new DataOutputStream(b);
-        c.writeInt(id); c.writeByte(1); c.writeFloat(alpha); c.writeInt(blend); c.writeInt(-1);
+        c.writeInt(id); c.writeByte(visible ? 1 : 0); c.writeFloat(alpha); c.writeInt(blend); c.writeInt(-1);
         c.writeInt(Integer.MIN_VALUE); str(c, name); c.writeInt(-1); c.writeInt(flag2); c.writeInt(parent);
         c.writeInt(0); c.writeInt(frameCurrent); c.writeInt(duration);
         chunk(out, folder ? FOLDER : LAYER, b);
@@ -305,6 +364,7 @@ public class IbisConverter extends SequenceZipConverter {
     private static final class Layer {
         int id, blend, parent = Integer.MIN_VALUE, duration = 1;
         String mode = "normal"; // el modo de fusión como nombre de Krita
+        String name = "";
         boolean folder, visible, frameFolder, trackFolder;
         float alpha;
         final List<Layer> children = new ArrayList<>();
@@ -341,39 +401,145 @@ public class IbisConverter extends SequenceZipConverter {
                 if (l.frameFolder && (l.parent == ROOT || (p != null && p.trackFolder))) frames.add(l);
             }
 
-            List<Integer> durations = new ArrayList<>();
-            List<byte[]> pngs = new ArrayList<>(); // null = frame vacío (hueco)
-            Map<Integer, int[]> cache = new HashMap<>();
-            if (frames.isEmpty()) { // ilustración: una sola imagen
-                pngs.add(Png.encode(render(roots, null, cache), width, height));
-                durations.add(1);
-            }
-            for (Layer frame : frames) {
-                int shown = frames.indexOf(frame);
-                bridge.progress(shown / (double) frames.size(), "ibisPaint: leyendo frame " + (shown + 1) + " de " + frames.size());
-                int[] canvas = render(roots, frame, cache);
-                pngs.add(isBlank(canvas) ? null : Png.encode(canvas, width, height));
-                durations.add(Math.max(1, frame.duration));
-                cache.keySet().removeIf(id -> isInside(byId.get(id), frame, byId)); // las capas de un frame no se reutilizan
-            }
-
-            Manifest m = new Manifest(width + "x" + height, fps > 0 ? fps : 24, 0);
-            m.tracks.add(TRACK);
-            int t = 0;
-            byte[] previous = null;
-            for (int i = 0; i < pngs.size(); i++) {
-                byte[] png = pngs.get(i);
-                FrameRef last = m.frames.isEmpty() ? null : m.frames.get(m.frames.size() - 1);
-                if (png != null && last != null && last.frame + last.hold == t && Arrays.equals(png, previous)) {
-                    m.frames.set(m.frames.size() - 1, new FrameRef(TRACK, last.frame, last.hold + durations.get(i), last.path)); // mismo dibujo: hold
-                } else if (png != null) {
-                    m.frames.add(new FrameRef(TRACK, t, durations.get(i), bridge.writeFrame(TRACK, t, png)));
+            // Cada capa de una carpeta de frame es una pista y cada carpeta normal, una carpeta: entre frames se reconocen por su
+            // nombre (ver place). Las que están fuera de los frames duran toda la animación.
+            List<Slot> below = new ArrayList<>(), slots = new ArrayList<>(), above = new ArrayList<>();
+            int t = 0, done = 0;
+            for (Layer root : roots) {
+                if (!root.frameFolder && !root.trackFolder) {
+                    place(Collections.singletonList(root), done == 0 ? below : above, true, 0, -1);
+                    continue;
                 }
-                previous = png;
-                t += durations.get(i);
+                for (Layer frame : root.frameFolder ? Collections.singletonList(root) : root.children) {
+                    if (!frame.frameFolder) continue;
+                    bridge.progress(done++ / (double) Math.max(1, frames.size()), "ibisPaint: leyendo frame " + done + " de " + frames.size());
+                    int hold = Math.max(1, frame.duration);
+                    place(frame.children, slots, frame.visible, t, hold);
+                    t += hold;
+                }
             }
-            m.duration = t;
+            Manifest m = new Manifest(width + "x" + height, fps > 0 ? fps : 24, Math.max(1, t));
+            for (List<Slot> group : Arrays.asList(below, slots, above)) emit(group, null, m, bridge);
             return m;
+        }
+
+        /** Una capa o carpeta a lo largo de los frames. */
+        private static final class Slot {
+            final String key;
+            final Layer def;
+            final boolean visible;
+            final List<Slot> kids = new ArrayList<>();
+            final List<Object[]> draws = new ArrayList<>(); // {inicio, duración, PNG o null}; en PNG porque sin comprimir no caben
+            byte[] lastRaw;
+
+            Slot(String key, Layer def, boolean visible) {
+                this.key = key;
+                this.def = def;
+                this.visible = visible;
+            }
+        }
+
+        /**
+         * Reparte las capas de un frame entre las de los frames anteriores: se reconocen por nombre y, si se repite, por cuál
+         * de las repetidas es (por su posición si no tiene nombre). Visibilidad, opacidad y modo van en la clave, porque una
+         * pista no puede mezclar capas que se combinan distinto. Se une a una existente solo si queda encima de la capa anterior
+         * del frame; si no, abre una nueva justo encima: así se respeta el orden de cada frame aunque no coincidan entre sí.
+         */
+        private void place(List<Layer> items, List<Slot> into, boolean inherited, int start, int hold) throws Exception {
+            Map<String, Integer> seen = new HashMap<>();
+            Set<Slot> used = new HashSet<>();
+            int prev = -1;
+            for (int k = 0; k < items.size(); k++) {
+                Layer c = items.get(k);
+                boolean visible = c.visible && inherited;
+                String base = (c.folder ? "f" : "c") + (c.name.isEmpty() ? "#" + k : "n" + c.name + "#" + seen.merge(c.name, 1, Integer::sum))
+                        + "|" + visible + "," + Math.round(c.alpha * 255) + "," + c.mode;
+                Slot slot = null;
+                for (int n = 1; slot == null; n++) {
+                    String key = n == 1 ? base : base + "~" + n;
+                    Slot existing = null;
+                    for (Slot s : into) if (s.key.equals(key)) existing = s;
+                    if (existing == null) {
+                        slot = new Slot(key, c, visible);
+                        into.add(prev + 1, slot);
+                    } else if (into.indexOf(existing) > prev && !used.contains(existing)) {
+                        slot = existing;
+                    }
+                }
+                used.add(slot);
+                prev = into.indexOf(slot);
+                if (c.folder) {
+                    place(c.children, slot.kids, true, start, hold);
+                } else if (images.containsKey(c.id)) {
+                    byte[] raw = rawImage(c.id);
+                    Object[] last = slot.draws.isEmpty() ? null : slot.draws.get(slot.draws.size() - 1);
+                    if (hold > 0 && last != null && Arrays.equals(raw, slot.lastRaw) && (Integer) last[0] + (Integer) last[1] == start) {
+                        last[1] = (Integer) last[1] + hold; // la misma imagen: se alarga sin decodificarla
+                    } else {
+                        slot.draws.add(new Object[]{start, hold, pngOrNull(layerImage(c.id))});
+                    }
+                    slot.lastRaw = raw;
+                }
+            }
+        }
+
+        /** Pasa las capas al manifiesto; devuelve si quedó algo (las capas y carpetas sin nada dibujado no aportan). */
+        private boolean emit(List<Slot> group, String parent, Manifest m, Bridge bridge) throws IOException {
+            boolean any = false;
+            for (Slot slot : group) {
+                Layer l = slot.def;
+                String name = l.name.isEmpty() ? (l.folder ? "carpeta" : "capa") : l.name;
+                if (l.folder) {
+                    Manifest.Layer folder = new Manifest.Layer();
+                    folder.id = "f" + m.layers.size();
+                    folder.name = name;
+                    folder.parent = parent;
+                    folder.visible = slot.visible;
+                    folder.opacity = Math.round(l.alpha * 255);
+                    folder.blend = l.mode;
+                    m.layers.add(folder);
+                    if (emit(slot.kids, folder.id, m, bridge)) any = true;
+                    else m.layers.remove(folder);
+                    continue;
+                }
+                String track = Bridge.addTrack(m, name);
+                byte[] previous = null;
+                FrameRef last = null;
+                for (Object[] d : slot.draws) {
+                    int start = (Integer) d[0], hold = (Integer) d[1] < 0 ? m.duration : (Integer) d[1];
+                    byte[] png = (byte[]) d[2];
+                    if (png != null && last != null && last.frame + last.hold == start && Arrays.equals(png, previous)) {
+                        m.frames.set(m.frames.size() - 1, last = new FrameRef(track, last.frame, last.hold + hold, last.path)); // mismo dibujo: hold
+                    } else if (png != null) {
+                        m.frames.add(last = new FrameRef(track, start, hold, bridge.writeFrame(track, start, png)));
+                    }
+                    previous = png;
+                }
+                if (last == null) {
+                    m.tracks.remove(track);
+                    continue;
+                }
+                Manifest.Layer ml = new Manifest.Layer(track, name, slot.visible);
+                ml.parent = parent;
+                ml.opacity = Math.round(l.alpha * 255);
+                ml.blend = l.mode;
+                m.layers.add(ml);
+                any = true;
+            }
+            return any;
+        }
+
+        /** Los datos de la imagen de una capa, sin la fecha ni el id del bloque (para saber si dos capas tienen la misma). */
+        private byte[] rawImage(int id) throws IOException {
+            long[] at = images.get(id);
+            byte[] body = new byte[(int) Math.max(0, at[1] - 18)];
+            f.seek(at[0] + 18);
+            f.readFully(body);
+            return body;
+        }
+
+        private byte[] pngOrNull(int[] px) throws IOException {
+            return px == null || isBlank(px) ? null : Png.encode(px, width, height);
         }
 
         /** Recorre los chunks del archivo; guarda dónde está cada imagen de capa y devuelve el MetaInfo. */
@@ -401,24 +567,6 @@ public class IbisConverter extends SequenceZipConverter {
                 pos += 12 + l;
             }
             return meta;
-        }
-
-        /** Combina, de abajo arriba, las capas visibles; de las carpetas de frame solo la del frame pedido. */
-        private int[] render(List<Layer> items, Layer frame, Map<Integer, int[]> cache) throws Exception {
-            int[] canvas = new int[width * height];
-            for (Layer l : items) {
-                if (!l.visible) continue;
-                if (l.frameFolder && l != frame) continue;
-                int opacity = Math.round(l.alpha * 255);
-                if (l.folder) {
-                    Composite.blend(canvas, render(l.children, frame, cache), l.mode, opacity);
-                } else if (images.containsKey(l.id)) {
-                    if (!cache.containsKey(l.id)) cache.put(l.id, layerImage(l.id));
-                    // shortcut: el recorte (clipping) se combina como si no existiera; basta para línea + color
-                    Composite.blend(canvas, cache.get(l.id), l.mode, opacity);
-                }
-            }
-            return canvas;
         }
 
         /** RPNG -> píxeles ARGB del lienzo, ya derechos. Ver glape::ImageIO::loadRlePng. */
@@ -455,7 +603,7 @@ public class IbisConverter extends SequenceZipConverter {
             // shortcut: sin tabla no se vio en archivos reales; se trata como un único tramo visible
             int[] r = runs.length == 0 ? new int[]{0, rw * rh} : new int[runs.length];
             for (int i = 0; i < runs.length; i++) r[i] = runs[i] & 0xFFFF;
-            return place(src, dims[0], dims[1], pad, r, rx, ry, rw, rh, w, h);
+            return rotated(place(src, dims[0], dims[1], pad, r, rx, ry, rw, rh, w, h));
         }
 
         /**
@@ -524,7 +672,12 @@ public class IbisConverter extends SequenceZipConverter {
             x.blend = r.getInt(); // modo de fusión
             r.getInt();
             if (r.remaining() >= 4) r.getInt(); // capa de origen
-            if (r.remaining() >= 2) r.position(r.position() + 2 + (r.getShort(r.position()) & 0xFFFF)); // nombre
+            if (r.remaining() >= 2) { // nombre (UTF-8 con su largo delante)
+                int n = r.getShort() & 0xFFFF;
+                byte[] name = new byte[Math.min(n, r.remaining())];
+                r.get(name);
+                x.name = new String(name, StandardCharsets.UTF_8);
+            }
             if (r.remaining() >= 4) r.getInt();
             int flag2 = r.remaining() >= 4 ? r.getInt() : 0;
             if (r.remaining() >= 4) x.parent = r.getInt();
@@ -562,16 +715,19 @@ public class IbisConverter extends SequenceZipConverter {
         return l >= 0 && p + 12L + l <= meta.length && b.getInt(p + 8 + l) == -(8 + l);
     }
 
+    /**
+     * ibisPaint guarda sus imágenes giradas 180° respecto a como las muestra: la miniatura de una obra real (la que
+     * compone la propia app) y sus capas salen cabeza abajo si se leen tal cual, y lo que se escribe sin girar se ve al
+     * revés en la app (comprobado en el teléfono). Por eso se gira al leer y al escribir, capas y miniatura.
+     */
+    static int[] rotated(int[] argb) {
+        int[] out = new int[argb.length];
+        for (int i = 0; i < out.length; i++) out[i] = argb[out.length - 1 - i];
+        return out;
+    }
+
     private static boolean isBlank(int[] argb) {
         for (int c : argb) if (c >>> 24 != 0) return false;
         return true;
-    }
-
-    private static boolean isInside(Layer l, Layer folder, Map<Integer, Layer> byId) {
-        for (Layer x = l; x != null; x = byId.get(x.parent)) {
-            if (x == folder) return true;
-            if (x.parent == x.id) break;
-        }
-        return false;
     }
 }

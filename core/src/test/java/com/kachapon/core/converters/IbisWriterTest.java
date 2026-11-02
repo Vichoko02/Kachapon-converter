@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -66,20 +67,20 @@ class IbisWriterTest {
         new IbisConverter(bridge).build(m, bridge, ipv);
 
         List<int[]> layers = IbisConverter.describe(ipv.getPath());
-        // por tramo: 3 capas + su carpeta de frame; más la capa especial -1
-        assertEquals(2 * 4 + 1, layers.size());
+        // por tramo: 4 capas (también la oculta) + su carpeta de frame; más la capa especial -1
+        assertEquals(2 * 5 + 1, layers.size());
         int multiply = 0, folders = 0;
         for (int[] l : layers) {
             if (l[1] == 1) {
                 folders++;
                 assertEquals(-5, l[4], "las carpetas de frame cuelgan de la raíz");
-            } else if (l[0] != -1 && l[2] == 2) {
+            } else if (l[0] != -1 && l[2] == 2 && l[3] != 100) {
                 multiply++;
                 assertEquals(50, l[3], "opacidad 128/255");
             }
         }
         assertEquals(2, folders);
-        assertEquals(2, multiply, "la sombra, una vez por tramo; la oculta no se escribe");
+        assertEquals(2, multiply, "la sombra, una vez por tramo");
     }
 
     @Test
@@ -92,9 +93,11 @@ class IbisWriterTest {
         check.reset();
         Manifest got = new IbisConverter(check).extract(ipv.getPath(), check);
         assertEquals(6, got.duration);
-        assertEquals(2, got.frames.size());
-        assertEquals(3, got.frames.get(0).hold);
-        assertEquals(3, got.frames.get(1).hold);
+        assertTrue(got.tracks.size() > 1, "las capas se conservan al leer: " + got.tracks);
+        List<Planner.State> read = new Planner(got, check, null).states();
+        assertEquals(2, read.size());
+        assertEquals(3, read.get(0).hold);
+        assertEquals(3, read.get(1).hold);
     }
 
     /** Escribir y leer devuelve la misma imagen en cada tramo: los modos de fusión y la opacidad se aplican igual al leer. */
@@ -109,10 +112,10 @@ class IbisWriterTest {
         check.reset();
         Manifest got = new IbisConverter(check).extract(ipv.getPath(), check);
         List<Planner.State> states = planner.states();
-        assertEquals(states.size(), got.frames.size());
+        Planner reread = new Planner(got, check, null);
         for (int i = 0; i < states.size(); i++) {
             int[] expected = planner.compose(states.get(i));
-            int[] read = Png.decode(check.readFrame(got.frames.get(i)));
+            int[] read = composeAt(reread, states.get(i).start);
             int worst = 0;
             for (int k = 0; k < expected.length; k++) {
                 int e = expected[k], r = read[k];
@@ -121,21 +124,6 @@ class IbisWriterTest {
             }
             assertTrue(worst <= 3, "tramo " + i + ": diferencia máxima " + worst);
         }
-    }
-
-    /** Con capas animadas separadas hay una capa más por frame que fundiéndolas con lo de arriba. */
-    @Test
-    void animatedLayersCanStaySeparateOrFuse() throws Exception {
-        Manifest m = scene();
-        draw(m, "marco", 0, 6, 0xFFFFFFFF); // otra capa normal encima de la animada
-        m.tracks.add("marco");
-        m.layers.add(layer("marco", "normal", 255, true));
-        File separate = new File(tmp, "separadas.ipv"), fused = new File(tmp, "fundidas.ipv");
-        new IbisConverter(bridge, true).build(m, bridge, separate);
-        new IbisConverter(bridge, false).build(m, bridge, fused);
-        // por tramo: fondo, sombra, linea y marco frente a fondo, sombra y linea+marco
-        assertEquals(2 * (4 + 1) + 1, IbisConverter.describe(separate.getPath()).size());
-        assertEquals(2 * (3 + 1) + 1, IbisConverter.describe(fused.getPath()).size());
     }
 
     /** {versión de formato, NeedVersionForPlay, NeedVersionForEdit, inicio de edición, cabecera RPNG, banderas RPNG, largo de la cola, tercera versión, largo de la animación}. */
@@ -163,6 +151,66 @@ class IbisWriterTest {
         return new int[]{b.getInt(body), b.getInt(p + 60), b.getInt(p + 64), edit, header, flags, body + metaLen - p, b.getInt(p + 606), b.getInt(p + 656)};
     }
 
+    /** El árbol entero vuelve igual: carpetas anidadas, capa oculta, modos y opacidad, sin fundir nada. */
+    @Test
+    void wholeTreeSurvivesTheRoundTrip() throws Exception {
+        Manifest m = scene();
+        Manifest.Layer outer = new Manifest.Layer(), inner = new Manifest.Layer();
+        outer.id = "a"; outer.name = "exterior"; outer.opacity = 200; outer.blend = "multiply";
+        inner.id = "b"; inner.name = "interior"; inner.parent = "a"; inner.visible = false;
+        m.layers.get(1).parent = "a";
+        m.layers.get(3).parent = "b";
+        m.layers.add(1, outer);
+        m.layers.add(2, inner);
+        File ipv = new File(tmp, "arbol.ipv");
+        new IbisConverter(bridge).build(m, bridge, ipv);
+
+        Bridge check = new Bridge(new File(tmp, "check").getPath());
+        check.reset();
+        Manifest got = new IbisConverter(check).extract(ipv.getPath(), check);
+        assertEquals(4, got.tracks.size());
+        assertEquals(m.frames.size(), got.frames.size(), "un dibujo con su hold, no uno por tramo");
+        List<String> expected = new java.util.ArrayList<>(), read = new java.util.ArrayList<>();
+        for (Manifest.Layer l : m.layers) expected.add(describe(m, l));
+        for (Manifest.Layer l : got.layers) read.add(describe(got, l));
+        java.util.Collections.sort(expected);
+        java.util.Collections.sort(read);
+        assertEquals(expected, read);
+        Planner a = new Planner(m, bridge, null), b = new Planner(got, check, null);
+        for (int t : new int[]{0, 3}) assertArrayEquals(composeAt(a, t), composeAt(b, t), "frame " + t);
+    }
+
+    private static String describe(Manifest m, Manifest.Layer l) {
+        StringBuilder path = new StringBuilder(l.name);
+        for (Manifest.Layer p = m.parent(l); p != null; p = m.parent(p)) path.insert(0, p.name + "/");
+        return path + " " + l.visible + " " + l.opacity + " " + l.blend;
+    }
+
+    /** La imagen combinada de lo leído en el frame t (un tramo vacío es transparente). */
+    private static int[] composeAt(Planner p, int t) {
+        for (Planner.State s : p.states()) if (s.start <= t && t < s.start + s.hold) return p.compose(s);
+        throw new AssertionError("sin tramo para el frame " + t);
+    }
+
+    /** ibisPaint guarda las imágenes giradas 180°: la miniatura del archivo es la escena del frame 0 girada. */
+    @Test
+    void imagesAreStoredRotated() throws Exception {
+        Manifest m = scene();
+        File ipv = new File(tmp, "giro.ipv");
+        new IbisConverter(bridge).build(m, bridge, ipv);
+        java.nio.ByteBuffer b = java.nio.ByteBuffer.wrap(java.nio.file.Files.readAllBytes(ipv.toPath()));
+        byte[] thumb = null;
+        for (int p = 0; p + 12 <= b.limit(); p += 12 + b.getInt(p + 4)) {
+            if (b.getInt(p) == 0x1000500 && b.getInt(p + 16) == -1 && b.get(p + 24) == 0) {
+                thumb = new byte[b.getInt(p + 26)];
+                b.position(p + 30);
+                b.get(thumb);
+            }
+        }
+        Planner planner = new Planner(m, bridge, null);
+        assertArrayEquals(IbisConverter.rotated(planner.compose(planner.states().get(0))), Png.decode(thumb));
+    }
+
     @Test
     void writesTheLegacyVersions() throws Exception {
         Manifest m = scene();
@@ -184,10 +232,10 @@ class IbisWriterTest {
         check.reset();
         Manifest got = new IbisConverter(check).extract(ipv.getPath(), check);
         List<Planner.State> states = planner.states();
-        assertEquals(states.size(), got.frames.size());
+        Planner reread = new Planner(got, check, null);
         for (int i = 0; i < states.size(); i++) {
             int[] expected = planner.compose(states.get(i));
-            int[] read = Png.decode(check.readFrame(got.frames.get(i)));
+            int[] read = composeAt(reread, states.get(i).start);
             int worst = 0;
             for (int k = 0; k < expected.length; k++) {
                 int e = expected[k], r = read[k];

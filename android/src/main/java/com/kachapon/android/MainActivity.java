@@ -52,7 +52,7 @@ public class MainActivity extends AppCompatActivity {
         formatGroup = findViewById(R.id.format_group);
 
         pickBtn.setOnClickListener(v -> pickInput.launch(new String[]{"*/*"}));
-        convertBtn.setOnClickListener(v -> pickOutput.launch(inputBase + selectedExt()));
+        convertBtn.setOnClickListener(v -> pickOutput.launch(Orchestrator.outputName(inputBase, ext(input.getName()), selectedExt())));
     }
 
     @Override

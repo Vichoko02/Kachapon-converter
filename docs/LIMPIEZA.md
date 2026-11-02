@@ -77,4 +77,4 @@ Dos conversiones al **mismo** archivo de destino comparten `salida.tmp` (`Orches
 
 ## Lo que no conviene tocar ahora
 
-Separar `IbisConverter` (lector, escritor y RPNG en un solo archivo de unas 600 líneas) es útil, pero es un cambio grande sin beneficio inmediato. Queda para cuando haya que tocar el formato otra vez.
+Nada pendiente en esta lista: `IbisConverter` ya se separó en lector (`IbisConverter`) y escritor (`IbisWriter`).

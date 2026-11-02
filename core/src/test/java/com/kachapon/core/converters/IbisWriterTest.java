@@ -5,6 +5,7 @@ import com.kachapon.core.FrameRef;
 import com.kachapon.core.Manifest;
 import com.kachapon.core.Planner;
 import com.kachapon.core.Png;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -192,13 +193,9 @@ class IbisWriterTest {
         throw new AssertionError("sin tramo para el frame " + t);
     }
 
-    /** ibisPaint guarda las imágenes giradas 180°: la miniatura del archivo es la escena del frame 0 girada. */
-    @Test
-    void imagesAreStoredRotated() throws Exception {
-        Manifest m = scene();
-        File ipv = new File(tmp, "giro.ipv");
-        new IbisConverter(bridge).build(m, bridge, ipv);
-        java.nio.ByteBuffer b = java.nio.ByteBuffer.wrap(java.nio.file.Files.readAllBytes(ipv.toPath()));
+    /** El PNG de la miniatura: el bloque de imagen de la capa -1 en formato 0. */
+    private static byte[] thumbnail(File ipv) throws IOException {
+        ByteBuffer b = ByteBuffer.wrap(java.nio.file.Files.readAllBytes(ipv.toPath()));
         byte[] thumb = null;
         for (int p = 0; p + 12 <= b.limit(); p += 12 + b.getInt(p + 4)) {
             if (b.getInt(p) == 0x1000500 && b.getInt(p + 16) == -1 && b.get(p + 24) == 0) {
@@ -207,8 +204,56 @@ class IbisWriterTest {
                 b.get(thumb);
             }
         }
+        return thumb;
+    }
+
+    /** La miniatura se guarda con la misma orientación que las capas: es la escena del frame 0 pasada por oriented. */
+    @Test
+    void thumbnailIsOrientedLikeTheLayers() throws Exception {
+        Manifest m = scene();
+        File ipv = new File(tmp, "giro.ipv");
+        new IbisConverter(bridge).build(m, bridge, ipv);
         Planner planner = new Planner(m, bridge, null);
-        assertArrayEquals(IbisConverter.rotated(planner.compose(planner.states().get(0))), Png.decode(thumb));
+        assertArrayEquals(IbisConverter.oriented(planner.compose(planner.states().get(0))), Png.decode(thumbnail(ipv)));
+    }
+
+    /** Una ida y vuelta no ve la orientación, pero en una obra real la miniatura la compuso ibisPaint y tiene que coincidir con sus capas. */
+    @Test
+    void realThumbnailMatchesItsLayers() throws Exception {
+        String sample = System.getenv("KACHAPON_IPV_SAMPLE");
+        Assumptions.assumeTrue(sample != null && new File(sample).exists(), "sin KACHAPON_IPV_SAMPLE");
+        int[] thumb = Png.decode(thumbnail(new File(sample)));
+        Bridge b = new Bridge(new File(tmp, "real").getPath());
+        b.reset();
+        Planner planner = new Planner(new IbisConverter(b).extract(sample, b), b, null);
+        double best = 100;
+        for (Planner.State s : planner.states()) {
+            if (!s.planes.isEmpty()) best = Math.min(best, percentDifferent(IbisConverter.oriented(planner.compose(s)), thumb));
+        }
+        assertTrue(best < 0.01, "la miniatura no coincide con ningún frame: " + best + " %");
+    }
+
+    /** Sobre blanco, porque la miniatura puede no tener alfa: píxeles con algún canal a más de 8 niveles, sobre los que no son blancos. */
+    private static double percentDifferent(int[] x, int[] y) {
+        long bad = 0, seen = 0;
+        for (int i = 0; i < x.length; i++) {
+            int p = overWhite(x[i]), q = overWhite(y[i]);
+            if (p == 0xFFFFFF && q == 0xFFFFFF) continue;
+            seen++;
+            for (int sh = 0; sh < 24; sh += 8) {
+                if (Math.abs(((p >> sh) & 0xFF) - ((q >> sh) & 0xFF)) > 8) {
+                    bad++;
+                    break;
+                }
+            }
+        }
+        return 100.0 * bad / Math.max(1, seen);
+    }
+
+    private static int overWhite(int argb) {
+        int a = argb >>> 24, out = 0;
+        for (int sh = 0; sh < 24; sh += 8) out |= ((((argb >> sh) & 0xFF) * a + 255 * (255 - a)) / 255) << sh;
+        return out;
     }
 
     @Test

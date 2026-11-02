@@ -22,7 +22,7 @@ class RpngEqualityTest {
                     boolean on = mode == 0 ? false : mode == 1 ? true : mode == 2 ? rnd.nextInt(10) == 0 : (i / w > h / 3 && i % w > w / 4 && i % w < w / 2);
                     if (on) px[i] = (1 + rnd.nextInt(255)) << 24 | rnd.nextInt(0x1000000);
                 }
-                assertArrayEquals(oldRpng(px, w, h, true), IbisConverter.rpng(px, w, h), w + "x" + h + " modo " + mode);
+                assertArrayEquals(oldRpng(px, w, h, true), IbisWriter.rpng(px, w, h), w + "x" + h + " modo " + mode);
             }
         }
     }

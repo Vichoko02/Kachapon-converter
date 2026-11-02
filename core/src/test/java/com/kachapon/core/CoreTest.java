@@ -168,15 +168,17 @@ class CoreTest {
         Manifest m = Orchestrator.converterFor(".ipv", b).extract(sample, b);
         assertTrue(m.fps > 0);
         assertTrue(m.frames.size() > 1, "la muestra debe ser una animación");
-        int end = 0;
+        java.util.Map<String, Integer> ends = new java.util.HashMap<>();
         for (FrameRef fr : m.frames) {
-            assertEquals(end, fr.frame, "los dibujos deben ir seguidos");
-            end = fr.frame + fr.hold;
+            assertTrue(m.tracks.contains(fr.track));
+            assertTrue(fr.frame >= ends.getOrDefault(fr.track, 0), "dibujos encimados en la capa " + fr.track);
+            ends.put(fr.track, fr.frame + fr.hold);
+            assertTrue(fr.hold >= 1 && fr.frame + fr.hold <= m.duration, "hold fuera de rango en " + fr.path);
             BufferedImage img = ImageIO.read(new ByteArrayInputStream(b.readFrame(fr)));
             assertEquals(m.width(), img.getWidth());
             assertEquals(m.height(), img.getHeight());
         }
-        assertEquals(m.duration, end);
+        assertEquals(m.duration, java.util.Collections.max(ends.values()));
 
         File out = new File(tmp, "real_ipv.clip");
         ConversionResult r = new Orchestrator(new File(tmp, "bridge").getPath()).run(sample, out.getPath());

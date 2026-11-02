@@ -23,7 +23,7 @@ Ningún formato conoce a otro: agregar uno es escribir un `Converter` con `extra
 |---|---|---|
 | `.kra` (`KritaConverter`) | Las capas sin máscaras se leen de los bloques LZF del ZIP (`KraTiles`). Las demás, con Krita por detrás: una copia reducida del documento con solo esa capa visible y `--export-sequence`, vigilada con un límite de tiempo. | Documento Krita nativo: una capa de pintura animada por pista, dentro de su árbol de carpetas. |
 | `.clip` (`ClipConverter`, `ClipWriter`) | El archivo `CSFCHUNK`: la base SQLite (`Sqlite`) con capas, carpetas y línea de tiempo, y los bloques de píxeles. | A partir de la plantilla `clip_template.clip`: las capas con varios dibujos pasan a ser carpetas de animación (un cel por dibujo) y las quietas, capas normales (`SqliteWriter`, `Binc` para las curvas de tiempo). |
-| `.ipv` (`IbisConverter`) | La lista de chunks de ibisPaint: cada carpeta de frame es un dibujo, con su duración. | Siempre en el formato de ibisPaint 11 (`docs/IBIS_VERSIONES.md`): una carpeta de frame por tramo, con las capas que el `Planner` deja separadas. |
+| `.ipv` (`IbisConverter`, `IbisWriter`) | La lista de chunks de ibisPaint: en cada carpeta de frame, las capas y carpetas se reconocen por nombre entre un frame y otro, y un mismo dibujo seguido pasa a ser un hold. | Siempre en el formato de ibisPaint 11 (`docs/IBIS_VERSIONES.md`): una carpeta de frame por tramo con el árbol completo, sin fundir nada. Una escena grande pesa mucho porque cada capa se repite en cada frame. |
 | Secuencia PNG (`PngSequenceConverter`) | Una carpeta de PNG en orden. | Una carpeta `nombre_Nfps/` con un PNG por frame. |
 
 ## Módulos (Gradle)

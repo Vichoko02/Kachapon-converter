@@ -4,6 +4,32 @@
 
 Fuente: `libibispaint.so` de ibisPaint **14.1.2** x86_64 (`bin/apks/ibispaint/split_config.x86_64.apk`), con símbolos, desensamblado con capstone; textos de `base.apk` (`assets/lang/en.txt`, `es.txt`). Solo hay **un** binario: todo lo que se dice de apps más viejas se deduce de cómo el lector de la 14.1.2 maneja los archivos viejos y queda marcado **sin confirmar** cuando no se puede comprobar. Las direcciones son de esa `.so`.
 
+## Orientación
+
+`IbisConverter.STORED_ROTATED_180` (hoy `true`) es el único lugar que decide el giro: el lector y `IbisWriter` pasan por `IbisConverter.oriented`, capas y miniatura. Como giran por igual, los tests de ida y vuelta **no pueden detectar un valor equivocado**.
+
+**Oráculo independiente:** la miniatura de una obra real la compuso la propia app. Comparada con el frame 0 de las capas de `82 sin título.ipv` (1080x1920, 8 capas, 22 dibujos) tal como las lee el programa, con un píxel distinto si algún canal difiere en más de 8 sobre blanco:
+
+| Orientación de las capas leídas | Píxeles distintos |
+|---|---|
+| Giro de 180° | **0,00 %** |
+| Sin cambio | 99,72 % |
+| Volteo vertical | 99,78 % |
+| Volteo horizontal | 99,71 % |
+
+Eso prueba que las capas y la miniatura se guardan con la misma orientación y que es un giro exacto, no un volteo. `IbisWriterTest.realThumbnailMatchesItsLayers` lo repite con `KACHAPON_IPV_SAMPLE`.
+
+**Lo que el oráculo no dice es cómo muestra la app lo guardado.** Eso solo se ve abriendo los archivos:
+
+| Dato | Resultado | Fuente |
+|---|---|---|
+| `82 sin título.ipv` en ibisPaint | Derecha, aunque su miniatura guardada se ve cabeza abajo al abrirla como PNG | Lo primero lo confirmó el usuario; lo segundo se comprobó extrayendo el PNG |
+| Archivo de Kachapon con giro, ibisPaint 14.1.4 para Windows | Derecho | Abierto en la app, con el escritor anterior al árbol completo (el giro era el mismo) |
+| Archivo de Kachapon sin giro, ibisPaint 14.1.2 | Elegido antes por el usuario como correcto, según el informe de esa prueba: contradice el dato anterior | Sin explicar |
+| Teléfono, con el código actual | **Sin probar** | — |
+
+**Decisión pendiente:** el usuario deja o cambia el valor después de abrir los archivos en las apps.
+
 ## Muestra real de la 14.0.0: dónde están los 21 bytes
 
 Comparé la cola de MetaInfo de una muestra real hecha con **ibisPaint X ver.14.0.0** (un proyecto personal en Descargas que no se copia al repo) con nuestra plantilla `META_TAIL` (14.1.2). Parseé las dos con el orden exacto de `write*` de `MetaInfoChunk::serializeClassSpecifics` (`0x25f2e90`), y en las dos todos los subchunks cierran bien (largo y trailer). La muestra mide 755 bytes y la plantilla 776, así que la plantilla tiene **21 bytes más**. Se explican así:
@@ -49,7 +75,7 @@ Conclusión: **lo que bloquea abrir el archivo en una app vieja son NeedVersionF
 
 ## B. Cada campo que escribimos
 
-| # | Campo (lo que escribe `IbisConverter.build`) | Versión mínima | Evidencia | Diseño antes de esa versión |
+| # | Campo (lo que escribe `IbisWriter.write`) | Versión mínima | Evidencia | Diseño antes de esa versión |
 |---|---|---|---|---|
 | 1a | MetaInfo: versión `1410` | El lector de la 14.1.2 solo tiene cortes hasta **419**. Cualquier valor de 419 a 1410 hace que lea **exactamente los mismos bytes**. | Lista completa de cortes en `0x25f3ed0`: 210, 250, 302, 340, 370, 410, 419. Lo posterior se agrega con `canRead`, no con la versión. | Con menos de 419, la 14.1.2 dejaría de leer campos que nosotros sí escribimos y se desalinearía. Con menos de 211 también cambian los textos del principio (`serializeClassSpecifics` `0x25f2ece`: `cmp [rbx+0x1c], 0xd3`). |
 | 1b | MetaInfo: `META_TAIL` | Es el diseño de la 14.1.2. Los campos nuevos van al final y se leen con `canRead`. | Muchos `canRead`/`canReadString` después de los cortes en `0x25f3ed0`. | Una app vieja lee el principio que conoce e ignora el resto (**sin confirmar**: no hay binario viejo). |

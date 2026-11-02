@@ -33,20 +33,22 @@ public class CoreOnDeviceTest {
 
         for (String src : FORMATS) {
             File in = new File(cache, "sample" + src);
-            Orchestrator.converterFor(src, ref).build(expected, ref, in);
+            Orchestrator.converterFor(src).build(expected, ref, in);
             for (String dst : FORMATS) {
                 if (src.equals(dst)) continue;
                 File out = new File(cache, "out/r" + dst);
-                ConversionResult r = new Orchestrator(new File(cache, "temp_seq").getPath()).run(in.getPath(), out.getPath());
+                ConversionResult r = new Orchestrator().run(in.getPath(), out.getPath());
                 assertTrue(src + " -> " + dst + ": " + r.error, r.success);
 
                 Bridge check = new Bridge(new File(cache, "check").getPath());
                 check.reset();
-                Manifest got = Orchestrator.converterFor(dst, check).extract(out.getPath(), check);
-                assertEquals(expected.frames.size(), got.frames.size());
+                Manifest got = Orchestrator.converterFor(dst).extract(out.getPath(), check);
+                assertEquals(src + " -> " + dst, expected.frames.size(), got.frames.size());
                 for (int i = 0; i < got.frames.size(); i++) {
-                    assertEquals(expected.frames.get(i).hold, got.frames.get(i).hold);
-                    assertArrayEquals(ref.readFrame(expected.frames.get(i)), check.readFrame(got.frames.get(i)));
+                    assertEquals(src + " -> " + dst, expected.frames.get(i).hold, got.frames.get(i).hold);
+                    // Píxeles, no bytes: cada formato vuelve a codificar el PNG a su manera
+                    assertArrayEquals(src + " -> " + dst + ", dibujo " + i,
+                            Png.decode(ref.readFrame(expected.frames.get(i))), Png.decode(check.readFrame(got.frames.get(i))));
                 }
             }
         }

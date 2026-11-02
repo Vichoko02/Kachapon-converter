@@ -108,8 +108,7 @@ public class MainActivity extends AppCompatActivity {
         String msg = "Error: " + r.error;
         boolean saved = false;
         if (r.success) {
-            try {
-                OutputStream os = getContentResolver().openOutputStream(uri);
+            try (OutputStream os = getContentResolver().openOutputStream(uri)) {
                 if (os == null) throw new IOException("destino no disponible");
                 copy(new FileInputStream(out), os);
                 saved = true;

@@ -59,7 +59,7 @@ class PlannerTest {
     void normalLayersFuseIntoOne() throws Exception {
         Manifest m = manifest(4, "a", "b", "c");
         for (String t : m.tracks) draw(m, t, 0, 4, 0xFFFF0000);
-        List<Planner.State> states = new Planner(m, bridge, null).states();
+        List<Planner.State> states = new Planner(m, bridge).states();
         assertEquals(1, states.size());
         assertEquals(4, states.get(0).hold);
         assertEquals(1, states.get(0).planes.size());
@@ -73,7 +73,7 @@ class PlannerTest {
         m.layers.add(layer("b", "normal", 255, true, null));
         m.layers.add(layer("c", "multiply", 128, true, null));
         m.layers.add(layer("d", "normal", 255, true, null));
-        List<Planner.Plane> planes = new Planner(m, bridge, null).states().get(0).planes;
+        List<Planner.Plane> planes = new Planner(m, bridge).states().get(0).planes;
         assertEquals(3, planes.size(), "a+b fundidas, c con su modo, d");
         assertEquals("normal", planes.get(0).blend);
         assertEquals("multiply", planes.get(1).blend);
@@ -88,7 +88,7 @@ class PlannerTest {
         draw(m, "b", 0, 2, 0xFF00FF00);
         m.layers.add(layer("a", "normal", 255, true, null));
         m.layers.add(layer("b", "multiply", 255, false, null));
-        List<Planner.Plane> planes = new Planner(m, bridge, null).states().get(0).planes;
+        List<Planner.Plane> planes = new Planner(m, bridge).states().get(0).planes;
         assertEquals(1, planes.size());
     }
 
@@ -102,7 +102,7 @@ class PlannerTest {
         m.layers.add(layer("b", "normal", 255, true, "g1"));
         m.layers.add(folder("g2", "multiply", 100, false));
         m.layers.add(layer("c", "normal", 255, true, "g2"));
-        List<Planner.Plane> planes = new Planner(m, bridge, null).states().get(0).planes;
+        List<Planner.Plane> planes = new Planner(m, bridge).states().get(0).planes;
         assertEquals(2, planes.size(), "a+b fundidas y la carpeta g2 aparte");
         assertEquals("multiply", planes.get(1).blend);
         assertEquals(100, planes.get(1).opacity);
@@ -115,7 +115,7 @@ class PlannerTest {
         m.layers.add(layer("a", "normal", 255, true, null));
         m.layers.add(folder("g", "normal", 100, false));
         m.layers.add(layer("b", "normal", 255, true, "g"));
-        List<Planner.Plane> planes = new Planner(m, bridge, null).states().get(0).planes;
+        List<Planner.Plane> planes = new Planner(m, bridge).states().get(0).planes;
         assertEquals(1, planes.size(), "en fusión normal la opacidad se aplica al alfa y todo se funde");
         assertEquals(255, planes.get(0).opacity);
     }
@@ -130,7 +130,7 @@ class PlannerTest {
         m.layers.add(layer("fondo", "normal", 255, true, null));
         m.layers.add(layer("sombra", "multiply", 255, true, null));
         m.layers.add(layer("linea", "normal", 255, true, null));
-        Planner p = new Planner(m, bridge, null);
+        Planner p = new Planner(m, bridge);
         List<Planner.State> states = p.states();
         assertEquals(2, states.size());
         assertEquals(0, states.get(0).start);
@@ -151,7 +151,7 @@ class PlannerTest {
         draw(m, "b", 0, 2, 0xFF00FF00);
         m.layers.add(layer("a", "overlay", 255, true, null));
         m.layers.add(layer("b", "normal", 255, true, null));
-        assertEquals(1, new Planner(m, bridge, null).states().get(0).planes.size(), "sin nada debajo, overlay da lo mismo que normal");
+        assertEquals(1, new Planner(m, bridge).states().get(0).planes.size(), "sin nada debajo, overlay da lo mismo que normal");
     }
 
     @Test
@@ -161,8 +161,7 @@ class PlannerTest {
         draw(m, "b", 0, 2, 0xFF00FF00);
         m.layers.add(layer("a", "normal", 255, true, null));
         m.layers.add(layer("b", "luminize", 255, true, null));
-        assertEquals(2, new Planner(m, bridge, null).states().get(0).planes.size());
-        assertEquals(1, new Planner(m, bridge, mode -> !mode.equals("luminize")).states().get(0).planes.size());
+        assertEquals(2, new Planner(m, bridge).states().get(0).planes.size());
     }
 
     @Test
@@ -172,27 +171,10 @@ class PlannerTest {
         draw(m, "b", 0, 1, 0xFF808080);
         m.layers.add(layer("a", "normal", 255, true, null));
         m.layers.add(layer("b", "multiply", 255, true, null));
-        Planner p = new Planner(m, bridge, null);
+        Planner p = new Planner(m, bridge);
         int v = p.compose(p.states().get(0))[1 * 8 + 1];
         assertEquals(0xFF, v >>> 24, "opaco");
         assertTrue(Math.abs(((v >> 16) & 0xFF) - 0x40) <= 1, "multiplicar 0,5 por 0,5 da 0,25");
-    }
-
-    @Test
-    void keepAnimatedLeavesAnimatedLayersSeparate() throws Exception {
-        Manifest m = manifest(6, "fondo", "linea", "marco");
-        draw(m, "fondo", 0, 6, 0xFF336699);
-        draw(m, "linea", 0, 3, 0xFF000000);
-        draw(m, "linea", 3, 3, 0xFFFF0000);
-        draw(m, "marco", 0, 6, 0xFFFFFFFF);
-        m.layers.add(folder("g", "normal", 255, false));
-        m.layers.add(layer("fondo", "normal", 255, true, "g"));
-        m.layers.add(layer("linea", "normal", 255, true, "g"));
-        m.layers.add(layer("marco", "normal", 255, true, null));
-        assertEquals(1, new Planner(m, bridge, null).states().get(0).planes.size(), "todo normal se funde");
-        List<Planner.Plane> planes = new Planner(m, bridge, null, true).states().get(0).planes;
-        assertEquals(3, planes.size(), "fondo, la capa animada aunque esté en una carpeta, y el marco");
-        assertEquals("linea", planes.get(1).name);
     }
 
     /** Decodificar por delante en varios hilos no cambia ni un píxel: mismas imágenes que en serie, y no quedan hilos vivos. */
@@ -209,12 +191,14 @@ class PlannerTest {
         m.layers.add(layer("c", "normal", 255, true, "g"));
         m.layers.add(layer("d", "screen", 255, true, null));
         m.layers.add(layer("e", "normal", 90, true, null));
-        Planner serial = new Planner(m, bridge, null, true).threads(0);
-        Planner parallel = new Planner(m, bridge, null, true).threads(4);
+        // En serie: pixels() sin pasar por compose(State), que es lo que pone a decodificar por delante
+        Planner serial = new Planner(m, bridge), parallel = new Planner(m, bridge);
         List<Planner.State> a = serial.states(), b = parallel.states();
         assertEquals(a.size(), b.size());
         for (int i = 0; i < a.size(); i++) {
-            org.junit.jupiter.api.Assertions.assertArrayEquals(serial.compose(a.get(i)), parallel.compose(b.get(i)), "tramo " + i);
+            int[] expected = new int[8 * 4];
+            for (Planner.Plane p : a.get(i).planes) Composite.blend(expected, serial.pixels(p), p.blend, p.opacity);
+            org.junit.jupiter.api.Assertions.assertArrayEquals(expected, parallel.compose(b.get(i)), "tramo " + i);
         }
         long deadline = System.currentTimeMillis() + 5000;
         while (System.currentTimeMillis() < deadline && Thread.getAllStackTraces().keySet().stream().anyMatch(t -> t.getName().equals("planner-decode"))) {

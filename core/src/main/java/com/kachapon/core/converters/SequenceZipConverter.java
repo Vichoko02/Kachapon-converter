@@ -8,13 +8,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.zip.*;
 
-/** .clip y .ipv: un ZIP con el mismo contenido que el puente (manifest.json + frames/ + timesheet.xdts). */
-public class SequenceZipConverter extends Converter {
+/** Base de .clip y .ipv: lee el ZIP con el contenido del puente (manifest.json + frames/) que escribían las primeras versiones del programa. */
+public abstract class SequenceZipConverter extends Converter {
     private final String ext;
     private final String app;
 
-    public SequenceZipConverter(String ext, String app, Bridge bridge) {
-        super(bridge);
+    protected SequenceZipConverter(String ext, String app) {
         this.ext = ext;
         this.app = app;
     }
@@ -38,15 +37,6 @@ public class SequenceZipConverter extends Converter {
             }
             m.frames = frames;
             return m;
-        }
-    }
-
-    @Override
-    public void build(Manifest m, Bridge bridge, File output) throws Exception {
-        try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(output))) {
-            put(zos, "manifest.json", Bridge.GSON.toJson(m).getBytes(StandardCharsets.UTF_8));
-            for (FrameRef fr : m.frames) put(zos, fr.path, bridge.readFrame(fr));
-            put(zos, "timesheet.xdts", Bridge.timesheet(m).getBytes(StandardCharsets.UTF_8));
         }
     }
 }

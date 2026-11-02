@@ -65,9 +65,9 @@ class IbisWriterTest {
     void writesOneLayerPerPlaneWithBlendAndOpacity() throws Exception {
         Manifest m = scene();
         File ipv = new File(tmp, "escena.ipv");
-        new IbisConverter(bridge).build(m, bridge, ipv);
+        new IbisConverter().build(m, bridge, ipv);
 
-        List<int[]> layers = IbisConverter.describe(ipv.getPath());
+        List<int[]> layers = records(ipv);
         // por tramo: 4 capas (también la oculta) + su carpeta de frame; más la capa especial -1
         assertEquals(2 * 5 + 1, layers.size());
         int multiply = 0, folders = 0;
@@ -88,14 +88,14 @@ class IbisWriterTest {
     void sameSceneReadsBackWithEveryFrame() throws Exception {
         Manifest m = scene();
         File ipv = new File(tmp, "escena.ipv");
-        new IbisConverter(bridge).build(m, bridge, ipv);
+        new IbisConverter().build(m, bridge, ipv);
 
         Bridge check = new Bridge(new File(tmp, "check").getPath());
         check.reset();
-        Manifest got = new IbisConverter(check).extract(ipv.getPath(), check);
+        Manifest got = new IbisConverter().extract(ipv.getPath(), check);
         assertEquals(6, got.duration);
         assertTrue(got.tracks.size() > 1, "las capas se conservan al leer: " + got.tracks);
-        List<Planner.State> read = new Planner(got, check, null).states();
+        List<Planner.State> read = new Planner(got, check).states();
         assertEquals(2, read.size());
         assertEquals(3, read.get(0).hold);
         assertEquals(3, read.get(1).hold);
@@ -106,14 +106,14 @@ class IbisWriterTest {
     void blendAndOpacitySurviveTheRoundTrip() throws Exception {
         Manifest m = scene();
         File ipv = new File(tmp, "escena.ipv");
-        new IbisConverter(bridge).build(m, bridge, ipv);
-        Planner planner = new Planner(m, bridge, null);
+        new IbisConverter().build(m, bridge, ipv);
+        Planner planner = new Planner(m, bridge);
 
         Bridge check = new Bridge(new File(tmp, "check").getPath());
         check.reset();
-        Manifest got = new IbisConverter(check).extract(ipv.getPath(), check);
+        Manifest got = new IbisConverter().extract(ipv.getPath(), check);
         List<Planner.State> states = planner.states();
-        Planner reread = new Planner(got, check, null);
+        Planner reread = new Planner(got, check);
         for (int i = 0; i < states.size(); i++) {
             int[] expected = planner.compose(states.get(i));
             int[] read = composeAt(reread, states.get(i).start);
@@ -141,15 +141,35 @@ class IbisWriterTest {
             }
             pos += 12 + len;
         }
-        // La cola va tras la lista de capas: el entero anterior a la primera capa dice cuántos registros hay
-        int body = meta, first = -1;
-        for (int p = body + 4; p + 12 <= b.limit(); p++) {
-            int t = b.getInt(p), l = b.getInt(p + 4);
-            if ((t == 0x3000402 || t == 0x3000403) && l >= 0 && p + 12 + l <= b.limit() && b.getInt(p + 8 + l) == -(8 + l)) { first = p; break; }
-        }
+        // La cola va tras la lista de capas
+        int body = meta, first = firstRecord(b);
         int count = b.getInt(first - 4), p = first;
         for (int i = 0; i < count; i++) p += 12 + b.getInt(p + 4);
         return new int[]{b.getInt(body), b.getInt(p + 60), b.getInt(p + 64), edit, header, flags, body + metaLen - p, b.getInt(p + 606), b.getInt(p + 656)};
+    }
+
+    /** El primer registro de capa o carpeta del MetaInfo; el entero anterior dice cuántos hay. */
+    private static int firstRecord(ByteBuffer b) {
+        int meta = -1;
+        for (int pos = 0; pos + 12 <= b.limit(); pos += 12 + b.getInt(pos + 4)) if (b.getInt(pos) == 0x1000600) meta = pos + 8;
+        for (int p = meta + 4; p + 12 <= b.limit(); p++) {
+            int t = b.getInt(p), l = b.getInt(p + 4);
+            if ((t == 0x3000402 || t == 0x3000403) && l >= 0 && p + 12 + l <= b.limit() && b.getInt(p + 8 + l) == -(8 + l)) return p;
+        }
+        throw new AssertionError("sin registros de capas");
+    }
+
+    /** Capas y carpetas del MetaInfo, leídas a mano: {id, carpeta (0/1), modo de fusión, opacidad en %, padre}. */
+    private static List<int[]> records(File ipv) throws IOException {
+        ByteBuffer b = ByteBuffer.wrap(java.nio.file.Files.readAllBytes(ipv.toPath()));
+        int p = firstRecord(b), count = b.getInt(p - 4);
+        List<int[]> out = new java.util.ArrayList<>();
+        for (int i = 0; i < count; i++, p += 12 + b.getInt(p + 4)) {
+            // id, visible, opacidad, modo, -1, MIN_VALUE, nombre, -1, flag2, padre
+            int q = p + 8, name = b.getShort(q + 21) & 0xFFFF;
+            out.add(new int[]{b.getInt(q), b.getInt(p) == 0x3000403 ? 1 : 0, b.getInt(q + 9), Math.round(b.getFloat(q + 5) * 100), b.getInt(q + 23 + name + 8)});
+        }
+        return out;
     }
 
     /** El árbol entero vuelve igual: carpetas anidadas, capa oculta, modos y opacidad, sin fundir nada. */
@@ -164,11 +184,11 @@ class IbisWriterTest {
         m.layers.add(1, outer);
         m.layers.add(2, inner);
         File ipv = new File(tmp, "arbol.ipv");
-        new IbisConverter(bridge).build(m, bridge, ipv);
+        new IbisConverter().build(m, bridge, ipv);
 
         Bridge check = new Bridge(new File(tmp, "check").getPath());
         check.reset();
-        Manifest got = new IbisConverter(check).extract(ipv.getPath(), check);
+        Manifest got = new IbisConverter().extract(ipv.getPath(), check);
         assertEquals(4, got.tracks.size());
         assertEquals(m.frames.size(), got.frames.size(), "un dibujo con su hold, no uno por tramo");
         List<String> expected = new java.util.ArrayList<>(), read = new java.util.ArrayList<>();
@@ -177,7 +197,7 @@ class IbisWriterTest {
         java.util.Collections.sort(expected);
         java.util.Collections.sort(read);
         assertEquals(expected, read);
-        Planner a = new Planner(m, bridge, null), b = new Planner(got, check, null);
+        Planner a = new Planner(m, bridge), b = new Planner(got, check);
         for (int t : new int[]{0, 3}) assertArrayEquals(composeAt(a, t), composeAt(b, t), "frame " + t);
     }
 
@@ -212,8 +232,8 @@ class IbisWriterTest {
     void thumbnailIsOrientedLikeTheLayers() throws Exception {
         Manifest m = scene();
         File ipv = new File(tmp, "giro.ipv");
-        new IbisConverter(bridge).build(m, bridge, ipv);
-        Planner planner = new Planner(m, bridge, null);
+        new IbisConverter().build(m, bridge, ipv);
+        Planner planner = new Planner(m, bridge);
         assertArrayEquals(IbisConverter.oriented(planner.compose(planner.states().get(0))), Png.decode(thumbnail(ipv)));
     }
 
@@ -225,7 +245,7 @@ class IbisWriterTest {
         int[] thumb = Png.decode(thumbnail(new File(sample)));
         Bridge b = new Bridge(new File(tmp, "real").getPath());
         b.reset();
-        Planner planner = new Planner(new IbisConverter(b).extract(sample, b), b, null);
+        Planner planner = new Planner(new IbisConverter().extract(sample, b), b);
         double best = 100;
         for (Planner.State s : planner.states()) {
             if (!s.planes.isEmpty()) best = Math.min(best, percentDifferent(IbisConverter.oriented(planner.compose(s)), thumb));
@@ -260,9 +280,9 @@ class IbisWriterTest {
     void writesTheLegacyVersions() throws Exception {
         Manifest m = scene();
         File legacy = new File(tmp, "legacy.ipv");
-        new IbisConverter(bridge).build(m, bridge, legacy);
+        new IbisConverter().build(m, bridge, legacy);
         assertEquals(java.util.Arrays.toString(new int[]{1100, 110000, 110000, 0x1044C, 41, 1, 722, 1100, 40}), java.util.Arrays.toString(versions(legacy)));
-        assertTrue(IbisConverter.describe(legacy.getPath()).stream().anyMatch(l -> l[2] != 0), "legacy conserva los modos de fusión");
+        assertTrue(records(legacy).stream().anyMatch(l -> l[2] != 0), "legacy conserva los modos de fusión");
     }
 
     /** El archivo legacy se lee de vuelta con la misma imagen que la escena compuesta con sus modos de fusión. */
@@ -270,14 +290,14 @@ class IbisWriterTest {
     void legacyFileReadsBackLikeTheScene() throws Exception {
         Manifest m = scene();
         File ipv = new File(tmp, "legacy.ipv");
-        new IbisConverter(bridge).build(m, bridge, ipv);
-        Planner planner = new Planner(m, bridge, null);
+        new IbisConverter().build(m, bridge, ipv);
+        Planner planner = new Planner(m, bridge);
 
         Bridge check = new Bridge(new File(tmp, "check").getPath());
         check.reset();
-        Manifest got = new IbisConverter(check).extract(ipv.getPath(), check);
+        Manifest got = new IbisConverter().extract(ipv.getPath(), check);
         List<Planner.State> states = planner.states();
-        Planner reread = new Planner(got, check, null);
+        Planner reread = new Planner(got, check);
         for (int i = 0; i < states.size(); i++) {
             int[] expected = planner.compose(states.get(i));
             int[] read = composeAt(reread, states.get(i).start);

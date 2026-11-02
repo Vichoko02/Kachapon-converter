@@ -26,10 +26,6 @@ public class KritaConverter extends Converter {
     private static final String IMAGE = "KachaponConverter"; // carpeta interna del documento
     private static final String DOCTYPE_PUBLIC = "-//KDE//DTD krita 2.0//EN", DOCTYPE_SYSTEM = "http://www.calligra.org/DTD/krita-2.0.dtd";
 
-    public KritaConverter(Bridge bridge) {
-        super(bridge);
-    }
-
     @Override
     public Manifest extract(String inputPath, Bridge bridge) throws Exception {
         Element image;

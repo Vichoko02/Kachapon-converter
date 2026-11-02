@@ -16,10 +16,6 @@ public class PngSequenceConverter extends Converter {
     private static final Pattern FPS = Pattern.compile("_(\\d{1,3})fps$");
     private static final String TRACK = "secuencia";
 
-    public PngSequenceConverter(Bridge bridge) {
-        super(bridge);
-    }
-
     /** Carpeta de salida para un destino "nombre.png": "nombre_Nfps" junto a él. */
     public static File folderFor(File output, int fps) {
         String name = output.getName();

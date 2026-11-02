@@ -23,8 +23,8 @@ public class ClipConverter extends SequenceZipConverter {
     private static final int BLOCK = 256;
     private static final String BEGIN = "BlockDataBeginChunk";
 
-    public ClipConverter(Bridge bridge) {
-        super(".clip", "Clip Studio", bridge);
+    public ClipConverter() {
+        super(".clip", "Clip Studio");
     }
 
     @Override

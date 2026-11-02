@@ -40,7 +40,7 @@ final class IbisWriter {
             if (f.frame > 0 && f.frame < m.duration) cuts.add(f.frame);
             if (f.frame + f.hold < m.duration) cuts.add(f.frame + f.hold);
         }
-        Planner planner = new Planner(m, bridge, null);
+        Planner planner = new Planner(m, bridge);
         int w = m.width(), h = m.height();
         double now = System.currentTimeMillis() / 1000.0;
         String art = artId();

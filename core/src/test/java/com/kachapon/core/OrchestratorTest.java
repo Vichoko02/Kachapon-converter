@@ -38,7 +38,7 @@ class OrchestratorTest {
             m.frames.add(new FrameRef("linea", i * 2, 2, b.writeFrame("linea", i * 2, png.toByteArray())));
         }
         File out = new File(tmp, name + ".clip");
-        Orchestrator.converterFor(".clip", b).build(m, b, out);
+        Orchestrator.converterFor(".clip").build(m, b, out);
         return out;
     }
 
@@ -47,7 +47,7 @@ class OrchestratorTest {
         File in = clip("a", 5, 0xFFFF0000);
         List<Double> seen = new ArrayList<>();
         List<String> stages = new ArrayList<>();
-        ConversionResult r = new Orchestrator(new File(tmp, "bridge").getPath())
+        ConversionResult r = new Orchestrator()
                 .onProgress((fraction, stage) -> { seen.add(fraction); stages.add(stage); })
                 .run(in.getPath(), new File(tmp, "salida.png").getPath());
         assertTrue(r.success, r.error);
@@ -119,7 +119,7 @@ class OrchestratorTest {
         File in = clip("c", 5, 0xFFFF0000), out = new File(tmp, "cancelada.kra");
         byte[] old = "archivo anterior".getBytes(java.nio.charset.StandardCharsets.UTF_8);
         java.nio.file.Files.write(out.toPath(), old);
-        Orchestrator o = new Orchestrator(new File(tmp, "bridge").getPath());
+        Orchestrator o = new Orchestrator();
         ConversionResult r = o.onProgress((fraction, stage) -> o.cancel()).run(in.getPath(), out.getPath());
         assertTrue(!r.success);
         assertTrue(o.isCancelled());
@@ -133,11 +133,11 @@ class OrchestratorTest {
     @Test
     void cancelBeforeStartingDoesNothing() throws Exception {
         File in = clip("d", 2, 0xFF00FF00), out = new File(tmp, "nunca.kra");
-        Orchestrator o = new Orchestrator(new File(tmp, "bridge2").getPath());
+        Orchestrator o = new Orchestrator();
         o.cancel();
         ConversionResult r = o.run(in.getPath(), out.getPath());
         assertTrue(!r.success);
-        assertTrue(!out.exists() && !new File(tmp, "bridge2").exists());
+        assertTrue(!out.exists());
     }
 
     /** Versión de formato que lleva el MetaInfo de un .ipv (1100: el formato de ibisPaint 11). */

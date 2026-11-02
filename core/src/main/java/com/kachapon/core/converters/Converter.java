@@ -8,12 +8,6 @@ import java.util.zip.*;
 
 /** Un formato de archivo: sabe pasar a la secuencia del puente y volver de ella. */
 public abstract class Converter {
-    protected final Bridge bridge;
-
-    protected Converter(Bridge bridge) {
-        this.bridge = bridge;
-    }
-
     /** Lee el archivo y deja su secuencia de imágenes en el puente. */
     public abstract Manifest extract(String inputPath, Bridge bridge) throws Exception;
 
@@ -39,7 +33,7 @@ public abstract class Converter {
         java.util.List<Drawing> out = new java.util.ArrayList<>();
         int w = m.width(), h = m.height();
         byte[] empty = null;
-        Planner planner = new Planner(m, bridge, null);
+        Planner planner = new Planner(m, bridge);
         try {
             for (Planner.State s : planner.states()) {
                 byte[] png;
@@ -64,7 +58,7 @@ public abstract class Converter {
      * la miniatura costaba ~100 s en una escena grande). PNG vacío si no hay nada que ver y sin bytes si la animación no tiene frames.
      */
     protected static byte[] firstFrame(Manifest m, Bridge bridge) throws IOException {
-        Planner planner = new Planner(m, bridge, null);
+        Planner planner = new Planner(m, bridge);
         try {
             java.util.List<Planner.State> states = planner.states();
             if (states.isEmpty()) return new byte[0];

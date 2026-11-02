@@ -18,7 +18,7 @@ public class Manifest {
     /** Árbol de capas y carpetas; entre hermanos va de abajo arriba. Opcional. */
     public List<Layer> layers = new ArrayList<>();
 
-    public Manifest() {}
+    public Manifest() {} // Gson: sin él no se inicializarían las listas al leer un manifest.json
 
     public Manifest(String resolution, int fps, int duration) {
         this.resolution = resolution;
@@ -56,17 +56,6 @@ public class Manifest {
         for (String t : tracks) out.add(layer(t) != null ? layer(t) : new Layer(t, t, true));
         if (layers != null) for (Layer l : layers) if (l.folder()) out.add(l);
         return out;
-    }
-
-    /** Si la pista se ve: su propia visibilidad y la de todas sus carpetas. */
-    public boolean visible(String track) {
-        for (Layer l = layer(track); l != null; l = parent(l)) if (!l.visible) return false;
-        return true;
-    }
-
-    public String name(String track) {
-        Layer l = layer(track);
-        return l == null || l.name == null || l.name.isEmpty() ? track : l.name;
     }
 
     public Layer parent(Layer l) {

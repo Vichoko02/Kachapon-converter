@@ -27,10 +27,10 @@ class CoreTest {
         addFrame(ref, expected, "linea", 2, 3, 0x800000FF);
         addFrame(ref, expected, "linea", 7, 1, 0xFF00FF00); // tras un hueco; el último frame queda vacío
         File ipv = new File(tmp, "anim.ipv");
-        Orchestrator.converterFor(".ipv", ref).build(expected, ref, ipv);
+        Orchestrator.converterFor(".ipv").build(expected, ref, ipv);
 
         Bridge check = bridge("icheck");
-        Manifest got = Orchestrator.converterFor(".ipv", check).extract(ipv.getPath(), check);
+        Manifest got = Orchestrator.converterFor(".ipv").extract(ipv.getPath(), check);
         assertEquals(expected.resolution, got.resolution);
         assertEquals(expected.fps, got.fps);
         assertEquals(expected.duration, got.duration);
@@ -54,12 +54,12 @@ class CoreTest {
         addFrame(ref, expected, "linea", 2, 3, 0x800000FF);
         addFrame(ref, expected, "linea", 7, 1, 0xFF00FF00); // tras un hueco; el último frame queda vacío
         File clip = new File(tmp, "anim.clip");
-        Orchestrator.converterFor(".clip", ref).build(expected, ref, clip);
+        Orchestrator.converterFor(".clip").build(expected, ref, clip);
         byte[] head = Files.readAllBytes(clip.toPath());
         assertEquals("CSFCHUNK", new String(head, 0, 8, StandardCharsets.US_ASCII), "debe ser un .clip nativo, no el ZIP puente");
 
         Bridge check = bridge("ccheck");
-        Manifest got = Orchestrator.converterFor(".clip", check).extract(clip.getPath(), check);
+        Manifest got = Orchestrator.converterFor(".clip").extract(clip.getPath(), check);
         assertEquals(expected.resolution, got.resolution);
         assertEquals(expected.fps, got.fps);
         assertEquals(expected.duration, got.duration);
@@ -72,14 +72,14 @@ class CoreTest {
         Bridge ref = bridge("lref");
         Manifest expected = layered(ref);
         File clip = new File(tmp, "capas.clip");
-        Orchestrator.converterFor(".clip", ref).build(expected, ref, clip);
+        Orchestrator.converterFor(".clip").build(expected, ref, clip);
 
         Bridge check = bridge("lcheck");
-        Manifest got = Orchestrator.converterFor(".clip", check).extract(clip.getPath(), check);
+        Manifest got = Orchestrator.converterFor(".clip").extract(clip.getPath(), check);
         assertEquals(expected.tracks, got.tracks, "las capas, de abajo arriba");
         for (String t : expected.tracks) {
-            assertEquals(expected.visible(t), got.visible(t), "visibilidad de " + t);
-            assertEquals(expected.name(t), got.name(t));
+            assertEquals(visible(expected, t), visible(got, t), "visibilidad de " + t);
+            assertEquals(name(expected, t), name(got, t));
         }
         assertEquals("multiply", got.layer("fondo").blend);
         assertEquals(128, got.layer("fondo").opacity);
@@ -110,10 +110,10 @@ class CoreTest {
         sombra.opacity = 100;
         m.layers.addAll(java.util.Arrays.asList(fondo, group, linea, sombra));
         File clip = new File(tmp, "carpetas.clip");
-        Orchestrator.converterFor(".clip", ref).build(m, ref, clip);
+        Orchestrator.converterFor(".clip").build(m, ref, clip);
 
         Bridge check = bridge("fcheck");
-        Manifest got = Orchestrator.converterFor(".clip", check).extract(clip.getPath(), check);
+        Manifest got = Orchestrator.converterFor(".clip").extract(clip.getPath(), check);
         assertEquals(m.tracks, got.tracks);
         Manifest.Layer g = null;
         for (Manifest.Layer l : got.layers) if (l.folder()) g = l;
@@ -158,6 +158,17 @@ class CoreTest {
         }
     }
 
+    /** Si la pista se ve: su propia visibilidad y la de todas sus carpetas. */
+    private static boolean visible(Manifest m, String track) {
+        for (Manifest.Layer l = m.layer(track); l != null; l = m.parent(l)) if (!l.visible) return false;
+        return true;
+    }
+
+    private static String name(Manifest m, String track) {
+        Manifest.Layer l = m.layer(track);
+        return l == null || l.name == null || l.name.isEmpty() ? track : l.name;
+    }
+
     /** .ipv real de ibisPaint: no se incluye en el repo, se indica con KACHAPON_IPV_SAMPLE=ruta. */
     @Test
     void readsRealIbisPaintFile() throws Exception {
@@ -165,7 +176,7 @@ class CoreTest {
         Assumptions.assumeTrue(sample != null && new File(sample).exists(), "sin KACHAPON_IPV_SAMPLE");
 
         Bridge b = bridge("ipv");
-        Manifest m = Orchestrator.converterFor(".ipv", b).extract(sample, b);
+        Manifest m = Orchestrator.converterFor(".ipv").extract(sample, b);
         assertTrue(m.fps > 0);
         assertTrue(m.frames.size() > 1, "la muestra debe ser una animación");
         java.util.Map<String, Integer> ends = new java.util.HashMap<>();
@@ -181,7 +192,7 @@ class CoreTest {
         assertEquals(m.duration, java.util.Collections.max(ends.values()));
 
         File out = new File(tmp, "real_ipv.clip");
-        ConversionResult r = new Orchestrator(new File(tmp, "bridge").getPath()).run(sample, out.getPath());
+        ConversionResult r = new Orchestrator().run(sample, out.getPath());
         assertTrue(r.success, r.error);
     }
 
@@ -197,10 +208,10 @@ class CoreTest {
         addFrame(ref, expected, "linea", 2, 3, 0x800000FF); // semitransparente
         addFrame(ref, expected, "linea", 7, 1, 0xFF00FF00); // tras un hueco de 2 frames
         File kra = new File(tmp, "anim.kra");
-        Orchestrator.converterFor(".kra", ref).build(expected, ref, kra);
+        Orchestrator.converterFor(".kra").build(expected, ref, kra);
 
         Bridge check = bridge("kcheck");
-        Manifest got = Orchestrator.converterFor(".kra", check).extract(kra.getPath(), check);
+        Manifest got = Orchestrator.converterFor(".kra").extract(kra.getPath(), check);
         assertEquals(expected.resolution, got.resolution);
         assertEquals(expected.fps, got.fps);
         assertEquals(expected.duration, got.duration);
@@ -215,12 +226,12 @@ class CoreTest {
         Bridge ref = bridge("klref");
         Manifest expected = layered(ref);
         File kra = new File(tmp, "capas.kra");
-        Orchestrator.converterFor(".kra", ref).build(expected, ref, kra);
+        Orchestrator.converterFor(".kra").build(expected, ref, kra);
 
         Bridge check = bridge("kl");
-        Manifest got = Orchestrator.converterFor(".kra", check).extract(kra.getPath(), check);
+        Manifest got = Orchestrator.converterFor(".kra").extract(kra.getPath(), check);
         assertEquals(expected.tracks, got.tracks, "las capas, de abajo arriba");
-        for (String t : expected.tracks) assertEquals(expected.visible(t), got.visible(t), "visibilidad de " + t);
+        for (String t : expected.tracks) assertEquals(visible(expected, t), visible(got, t), "visibilidad de " + t);
         assertSameFrames(ref, expected, check, got);
     }
 
@@ -234,9 +245,9 @@ class CoreTest {
         addFrame(ref, expected, "linea", 2, 3, 0x800000FF);
         addFrame(ref, expected, "linea", 7, 1, 0xFF00FF00); // tras un hueco; el último frame queda vacío
         File clip = new File(tmp, "anim.clip");
-        Orchestrator.converterFor(".clip", ref).build(expected, ref, clip);
+        Orchestrator.converterFor(".clip").build(expected, ref, clip);
 
-        ConversionResult r = new Orchestrator(new File(tmp, "b1").getPath()).run(clip.getPath(), new File(tmp, "anim.png").getPath());
+        ConversionResult r = new Orchestrator().run(clip.getPath(), new File(tmp, "anim.png").getPath());
         assertTrue(r.success, r.error);
         File dir = new File(r.outputPath);
         assertEquals("anim_12fps", dir.getName());
@@ -244,7 +255,7 @@ class CoreTest {
         assertEquals("anim_0001.png", dir.list((d, n) -> n.endsWith("0001.png"))[0]);
 
         Bridge check = bridge("scheck");
-        Manifest got = Orchestrator.converterFor(".png", check).extract(dir.getPath(), check);
+        Manifest got = Orchestrator.converterFor(".png").extract(dir.getPath(), check);
         assertEquals(12, got.fps);
         assertEquals(9, got.duration);
         assertEquals(expected.frames.size(), got.frames.size());
@@ -285,7 +296,7 @@ for (int i = 0; i < expected.frames.size(); i++) {
 
         File bad = new File(tmp, "vacio.kra");
         Files.write(bad.toPath(), new byte[0]);
-        ConversionResult r = new Orchestrator(new File(tmp, "bw").getPath()).run(bad.getPath(), new File(tmp, "x.clip").getPath());
+        ConversionResult r = new Orchestrator().run(bad.getPath(), new File(tmp, "x.clip").getPath());
         assertFalse(r.success);
         assertNotNull(r.warnings);
     }
@@ -297,7 +308,7 @@ for (int i = 0; i < expected.frames.size(); i++) {
         File existing = new File(tmp, "keep.kra");
         Files.write(existing.toPath(), "original".getBytes(StandardCharsets.UTF_8));
 
-        ConversionResult r = new Orchestrator(new File(tmp, "bridge").getPath()).run(bad.getPath(), existing.getPath());
+        ConversionResult r = new Orchestrator().run(bad.getPath(), existing.getPath());
         assertFalse(r.success);
         assertTrue(r.error.contains("Clip Studio"), r.error);
         assertEquals("original", new String(Files.readAllBytes(existing.toPath()), StandardCharsets.UTF_8));
@@ -313,7 +324,7 @@ for (int i = 0; i < expected.frames.size(); i++) {
         Assumptions.assumeTrue(sample != null && new File(sample).exists(), "sin KACHAPON_CLIP_SAMPLE");
 
         Bridge b = bridge("clip");
-        Manifest m = Orchestrator.converterFor(".clip", b).extract(sample, b);
+        Manifest m = Orchestrator.converterFor(".clip").extract(sample, b);
         assertTrue(m.frames.size() > 1, "la muestra debe ser una animación, no caer en la vista previa");
         for (FrameRef fr : m.frames) {
             assertTrue(m.tracks.contains(fr.track));
@@ -325,7 +336,7 @@ for (int i = 0; i < expected.frames.size(); i++) {
 
         // Y llega entero al otro formato
         File out = new File(tmp, "real.kra");
-        ConversionResult r = new Orchestrator(new File(tmp, "bridge").getPath()).run(sample, out.getPath());
+        ConversionResult r = new Orchestrator().run(sample, out.getPath());
         assertTrue(r.success, r.error);
     }
 
@@ -336,13 +347,13 @@ for (int i = 0; i < expected.frames.size(); i++) {
         Assumptions.assumeTrue(sample != null && new File(sample).exists(), "sin KACHAPON_KRA_SAMPLE");
 
         Bridge b = bridge("kra");
-        Manifest m = Orchestrator.converterFor(".kra", b).extract(sample, b);
+        Manifest m = Orchestrator.converterFor(".kra").extract(sample, b);
         assertTrue(m.tracks.size() > 1, "debe salir por capas");
         File clip = new File(tmp, "real_kra.clip");
-        Orchestrator.converterFor(".clip", b).build(m, b, clip);
+        Orchestrator.converterFor(".clip").build(m, b, clip);
 
         Bridge check = bridge("kraclip");
-        Manifest got = Orchestrator.converterFor(".clip", check).extract(clip.getPath(), check);
+        Manifest got = Orchestrator.converterFor(".clip").extract(clip.getPath(), check);
         assertEquals(m.tracks, got.tracks);
         assertSameFrames(b, m, check, got);
     }

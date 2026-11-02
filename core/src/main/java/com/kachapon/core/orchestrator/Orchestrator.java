@@ -13,22 +13,15 @@ public class Orchestrator {
     private static final String CANCELLED = "Conversión cancelada.";
 
     private final Bridge bridge;
-    private final boolean ownsBridge;
     private boolean cancelled;
     private Thread running;
 
-    public Orchestrator(String bridgeDir) {
-        this.bridge = new Bridge(bridgeDir);
-        this.ownsBridge = false;
-    }
-
     /**
      * Puente propio en la carpeta temporal del sistema, distinto en cada conversión para poder hacer varias a la vez, y que se
-     * borra al terminar (con las pruebas, que dan su carpeta, no se borra). En Android java.io.tmpdir es la caché de la app.
+     * borra al terminar. En Android java.io.tmpdir es la caché de la app.
      */
     public Orchestrator() {
         this.bridge = new Bridge(new File(System.getProperty("java.io.tmpdir"), "kachapon_" + UUID.randomUUID()).getPath());
-        this.ownsBridge = true;
     }
 
     /** Recibe el avance de la conversión (fracción 0..1 y qué se está haciendo); se llama desde el hilo que convierte. */
@@ -71,12 +64,10 @@ public class Orchestrator {
         } finally {
             ended();
             Bridge.collectWarnings(null);
-            if (ownsBridge) {
-                try {
-                    bridge.clean();
-                } catch (IOException ignored) {
-                    // es una carpeta temporal: si algo la tiene abierta se queda hasta que el sistema limpie
-                }
+            try {
+                bridge.clean();
+            } catch (IOException ignored) {
+                // es una carpeta temporal: si algo la tiene abierta se queda hasta que el sistema limpie
             }
         }
     }
@@ -91,8 +82,8 @@ public class Orchestrator {
         File out = new File(outputPath).getAbsoluteFile();
         File tmp = new File(out.getPath() + ".tmp");
         try {
-            Converter src = converterFor(srcExt, bridge);
-            Converter dst = converterFor(dstExt, bridge);
+            Converter src = converterFor(srcExt);
+            Converter dst = converterFor(dstExt);
             bridge.reset();
             // Leer un .kra son decenas de exportaciones de Krita y escribir es rápido; con los demás formatos el reparto es parejo
             double split = srcExt.equals(".kra") ? 0.9 : 0.5;
@@ -146,12 +137,12 @@ public class Orchestrator {
         }
     }
 
-    public static Converter converterFor(String ext, Bridge bridge) {
+    public static Converter converterFor(String ext) {
         switch (ext) {
-            case ".kra": return new KritaConverter(bridge);
-            case ".clip": return new ClipConverter(bridge);
-            case ".ipv": return new IbisConverter(bridge);
-            case ".png": return new PngSequenceConverter(bridge);
+            case ".kra": return new KritaConverter();
+            case ".clip": return new ClipConverter();
+            case ".ipv": return new IbisConverter();
+            case ".png": return new PngSequenceConverter();
             default: throw new IllegalArgumentException("Formato no soportado: " + ext);
         }
     }

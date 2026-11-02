@@ -42,28 +42,27 @@ final class ClipWriter {
      */
     static final class Node {
         final String name;
-        final boolean visible, passthrough;
+        final boolean visible;
         final int opacity, composite; // opacity 0..255, composite = LayerComposite de Clip Studio
         final List<Node> children;    // de abajo arriba
         final List<Converter.Drawing> drawings;
         boolean forceAnimated;
 
-        private Node(String name, boolean visible, int opacity, int composite, boolean passthrough, List<Node> children, List<Converter.Drawing> drawings) {
+        private Node(String name, boolean visible, int opacity, int composite, List<Node> children, List<Converter.Drawing> drawings) {
             this.name = name;
             this.visible = visible;
             this.opacity = opacity;
             this.composite = composite;
-            this.passthrough = passthrough;
             this.children = children;
             this.drawings = drawings;
         }
 
         static Node folder(String name, boolean visible, int opacity, String blend, boolean passthrough, List<Node> children) {
-            return new Node(name, visible, opacity, passthrough ? Blend.CLIP_PASS_THROUGH : Blend.toClip(blend), passthrough, children, null);
+            return new Node(name, visible, opacity, passthrough ? Blend.CLIP_PASS_THROUGH : Blend.toClip(blend), children, null);
         }
 
         static Node paint(String name, boolean visible, int opacity, String blend, List<Converter.Drawing> drawings) {
-            return new Node(name, visible, opacity, Blend.toClip(blend), false, null, drawings);
+            return new Node(name, visible, opacity, Blend.toClip(blend), null, drawings);
         }
 
         boolean animated() {

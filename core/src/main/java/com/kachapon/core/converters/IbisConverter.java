@@ -29,8 +29,8 @@ public class IbisConverter extends SequenceZipConverter {
      */
     static final boolean STORED_ROTATED_180 = true;
 
-    public IbisConverter(Bridge bridge) {
-        super(".ipv", "ibisPaint", bridge);
+    public IbisConverter() {
+        super(".ipv", "ibisPaint");
     }
 
     @Override
@@ -269,7 +269,9 @@ public class IbisConverter extends SequenceZipConverter {
             b.get(); // 0
             b.getInt(); // flags
             int w = b.getInt(), h = b.getInt(), rw = b.getInt(), rh = b.getInt(), rx = b.getInt(), ry = b.getInt();
-            int pngW = b.getInt(), pngH = b.getInt(), pad = b.getInt();
+            int pngW = b.getInt();
+            b.getInt(); // alto del PNG: lo da el propio PNG
+            int pad = b.getInt();
             b.position(b.position() + Math.max(0, headerSize - 41)); // color de transparencia y extras
             short[] runs = new short[0];
             if (pngW != 0) {
@@ -322,17 +324,6 @@ public class IbisConverter extends SequenceZipConverter {
                     col--;
                 }
             }
-            return out;
-        }
-    }
-
-    /** Para las pruebas: las capas del .ipv como {id, carpeta (0/1), modo de fusión, opacidad en %, padre}. */
-    static List<int[]> describe(String path) throws Exception {
-        try (RandomAccessFile f = new RandomAccessFile(path, "r")) {
-            byte[] meta = new Native(f).readChunks();
-            if (meta == null) throw new Exception("El .ipv no contiene la información de capas (MetaInfo).");
-            List<int[]> out = new ArrayList<>();
-            for (Layer l : layers(meta)) out.add(new int[]{l.id, l.folder ? 1 : 0, l.blend, Math.round(l.alpha * 100), l.parent});
             return out;
         }
     }
